@@ -2,7 +2,7 @@
 
 How the enemy AI in **Pokemon Radical Red 4.1** decides what to do each turn: which move it picks, when it switches, which Pokemon it sends in, and how it targets in double battles. Every finding is checked against the game's actual code, not guessed from play.
 
-> **Status:** every finding here comes from reading the ROM's code; nothing has been tested in play yet. I'm using these docs as a reference while playtesting, and will update them where the game behaves differently than the code suggests. Keep in mind that some behavior, in the code or in play, may come from a bug rather than what the code seems intended to do (the hazard re-use quirk in `docs/move-or-switch.md` is one likely example), so "what the AI does" and "what the AI was meant to do" are not always the same.
+> **Status:** every finding here comes from reading the ROM's code; nothing has been tested in play yet. I'm using these docs as a reference while playtesting, and will update them where the game behaves differently than the code suggests. Keep in mind that some behavior, in the code or in play, may come from a bug rather than what the code seems intended to do (the hazard re-use quirk in `docs/singles/move-or-switch.md` is one likely example), so "what the AI does" and "what the AI was meant to do" are not always the same.
 
 ## What is Radical Red?
 
@@ -25,9 +25,10 @@ Start with [`docs/ai-guide.md`](docs/ai-guide.md), then:
 
 | Doc | Covers |
 |---|---|
-| [`docs/move-or-switch.md`](docs/move-or-switch.md) | Single battles: how it scores moves, when it switches out, Hardcore's anti-switch rule |
-| [`docs/post-ko-switch-in.md`](docs/post-ko-switch-in.md) | Which Pokemon it sends in after a faint or a switch |
-| [`docs/double-battles.md`](docs/double-battles.md) | Doubles: roles, move scoring, target choice, and why it feels random |
+| [`docs/singles/move-or-switch.md`](docs/singles/move-or-switch.md) | Singles: how it scores moves, when it switches out, Hardcore's anti-switch rule |
+| [`docs/singles/post-ko-switch-in.md`](docs/singles/post-ko-switch-in.md) | Singles: which Pokemon it sends in after a faint or a switch |
+| [`docs/doubles/moves-and-targets.md`](docs/doubles/moves-and-targets.md) | Doubles: roles, move scoring, target choice, and why it feels random |
+| [`docs/doubles/post-ko-switch-in.md`](docs/doubles/post-ko-switch-in.md) | Doubles: which Pokemon it sends in after a faint |
 | [`docs/community-doc-comparison.md`](docs/community-doc-comparison.md) | Where the community AI doc matches or contradicts the code |
 | [`docs/ai-notes.md`](docs/ai-notes.md) | Raw evidence and ROM addresses |
 

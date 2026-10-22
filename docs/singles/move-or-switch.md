@@ -1,6 +1,6 @@
-# Single Battles: Move or Switch
+# Singles: Move or Switch
 
-How the Radical Red 4.1 AI decides each turn in a single battle: attack, use a status move, or switch out. Read `ai-guide.md` first for the tags ([ROM] / [CFRU]), the damage roll and what the AI knows about you.
+How the Radical Red 4.1 AI decides each turn in a single battle: attack, use a status move, or switch out. Read `../ai-guide.md` first for the tags ([ROM] / [CFRU]), the damage roll and what the AI knows about you.
 
 ## 1. Order of decisions each turn
 

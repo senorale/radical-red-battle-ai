@@ -77,7 +77,7 @@ Extra details the community doc does not mention:
 
 ## 4. Not in the community doc
 
-All of these are confirmed in the ROM (see `docs/ai-guide.md`, `docs/move-or-switch.md`, `docs/post-ko-switch-in.md`):
+All of these are confirmed in the ROM (see `docs/ai-guide.md`, `docs/singles/move-or-switch.md`, `docs/singles/post-ko-switch-in.md`):
 
 - **Every trainer uses the full smart AI.** The per-trainer AI setting is ignored. Wild Pokemon pick moves at random.
 - **Difficulty modes use the same AI.** Normal, Restricted, Hardcore and Easy share the same decision logic; the only difference is Hardcore's anti-switch rule.
@@ -95,7 +95,7 @@ All of these are confirmed in the ROM (see `docs/ai-guide.md`, `docs/move-or-swi
   - Hazard "already set" check is skipped when you have 3 or fewer mons (singles).
   - Speed-lowering attacks and Smack Down bonuses are 50%.
 - Puzzle/trial battles send Pokemon in fixed order and never switch.
-- **How doubles actually picks moves and targets.** The community doc has the role priority ladders but not the rest of the doubles logic (all ROM-verified, see `docs/double-battles.md`):
+- **How doubles actually picks moves and targets.** The community doc has the role priority ladders but not the rest of the doubles logic (all ROM-verified, see `docs/doubles/moves-and-targets.md` and `docs/doubles/post-ko-switch-in.md`):
   - **How roles are assigned** from the moveset. Only All-Out, Setup and Trick Room Attackers count as "attackers".
   - **Only one damaging move per target gets the ladder bonus.** Its 0 to 12 score is +4 per foe hit, +2 per KO, +1 if strongest, reduced for weak hits, and -3 for hitting its partner. Other attacks stay at base 100.
   - **Random tie-breaks** between equal moves, and between equal targets for non-attacker roles. Attackers prefer KOs, then threats, then most damage only 25% of the time.

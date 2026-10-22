@@ -1,8 +1,8 @@
-# Double Battles
+# Doubles: Moves and Targets
 
-How the Radical Red 4.1 AI picks moves and targets in double battles. Read `ai-guide.md` first for the tags and damage roll.
+How the Radical Red 4.1 AI picks moves and targets in double battles. Read `../ai-guide.md` first for the tags and damage roll.
 
-Doubles uses different move scoring from singles. These rules apply whenever both sides are not down to one Pokemon each. Once it is 1 vs 1, the singles rules in `move-or-switch.md` apply. All of this was checked in the ROM and matches CFRU.
+Doubles uses different move scoring from singles. These rules apply whenever both sides are not down to one Pokemon each. Once it is 1 vs 1, the singles rules in `../singles/move-or-switch.md` apply. All of this was checked in the ROM and matches CFRU.
 
 ## Step 1: each AI Pokemon gets a role [CFRU, ladders ROM-verified]
 
@@ -69,6 +69,8 @@ The AI processes its two Pokemon in speed order, so the slower one knows what th
 4. Only one damaging move per target gets a bonus, so its other strong moves sit at the same score as each other and get picked at random.
 5. The 75% Wide Guard check changes from turn to turn.
 6. Its choices depend on its partner's choice, which changes the whole picture when the faster partner picks differently.
+7. Moves with a 50%+ crit chance get a coin flip on whether the crit is counted, which can change whether a move "KOs".
+8. Replacements after a KO are also coin flips on ties, and in doubles every tie is a flip (`post-ko-switch-in.md` section 3).
 
 ## Other doubles rules
 
@@ -76,10 +78,10 @@ The AI processes its two Pokemon in speed order, so the slower one knows what th
 |---|---|---|
 | Fake Out | Strong preference on turn 1, aimed at the more threatening target. | [CFRU] |
 | Protect | Second Protect in a row has no penalty in Radical Red; third gets -10. | [ROM] |
-| Penalties | All "avoid" penalties from `move-or-switch.md` are doubled. | [CFRU] |
+| Penalties | All "avoid" penalties from `../singles/move-or-switch.md` are doubled. | [CFRU] |
 | Thaw | A frozen AI Pokemon with a thawing move gets +20. | [ROM] |
-| Switching | Most switch rules in `move-or-switch.md` are singles-only. In doubles it mainly switches to absorb your predicted attack, when it has only bad moves left against both foes, or for Yawn/asleep/residual damage. | [CFRU] |
-| Replacements after a KO | Scored against both of your Pokemon and summed. Its offense uses damage calcs; your offense uses only the type chart; a switch-in you would KO loses just 1 point. Details in `post-ko-switch-in.md` section 4. | [ROM] |
+| Switching | Most switch rules in `../singles/move-or-switch.md` are singles-only. In doubles it mainly switches to absorb your predicted attack, when it has only bad moves left against both foes, or for Yawn/asleep/residual damage. | [CFRU] |
+| Replacements after a KO | Scored against both of your Pokemon and summed. Its offense uses damage calcs; your offense uses only the type chart; a switch-in you would KO loses just 1 point. Details in `post-ko-switch-in.md`. | [ROM] |
 
 ## Priority ladders
 

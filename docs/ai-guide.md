@@ -4,9 +4,10 @@ As of 2026-10-22. Built from the CFRU source (the engine Radical Red is built on
 
 | Doc | Covers |
 |---|---|
-| [`move-or-switch.md`](move-or-switch.md) | Single battles: how it picks a move, when it switches out, Hardcore anti-switch rule |
-| [`post-ko-switch-in.md`](post-ko-switch-in.md) | Which Pokemon it sends in, after a faint or a voluntary switch |
-| [`double-battles.md`](double-battles.md) | Doubles: roles, move scoring, target choice, partner coordination, why it feels random |
+| [`singles/move-or-switch.md`](singles/move-or-switch.md) | Singles: how it picks a move, when it switches out, Hardcore anti-switch rule |
+| [`singles/post-ko-switch-in.md`](singles/post-ko-switch-in.md) | Singles: which Pokemon it sends in, after a faint or a voluntary switch |
+| [`doubles/moves-and-targets.md`](doubles/moves-and-targets.md) | Doubles: roles, move scoring, target choice, partner coordination, why it feels random |
+| [`doubles/post-ko-switch-in.md`](doubles/post-ko-switch-in.md) | Doubles: which Pokemon it sends in after a faint |
 | [`community-doc-comparison.md`](community-doc-comparison.md) | How the community AI doc compares to the ROM findings |
 | [`ai-notes.md`](ai-notes.md) | Raw evidence and ROM addresses |
 
@@ -23,7 +24,7 @@ As of 2026-10-22. Built from the CFRU source (the engine Radical Red is built on
 |---|---|---|
 | Every trainer uses the full smart AI | Radical Red ignores the per-trainer AI setting and gives every trainer battle the full "Check Bad Move + Check Good Move" AI. There are no "dumb" route trainers. | [ROM] |
 | Wild Pokemon act randomly | Wild battles get no scoring scripts, so they pick any usable move at random. Scripted legendary encounters use a lighter "semi-smart" AI. | [ROM] |
-| Difficulty modes use the same AI | Normal, Restricted, Hardcore and Easy all use the same AI decision logic. The only difference is Hardcore's anti-switch rule (`move-or-switch.md` section 6). | [ROM] |
+| Difficulty modes use the same AI | Normal, Restricted, Hardcore and Easy all use the same AI decision logic. The only difference is Hardcore's anti-switch rule (`singles/move-or-switch.md` section 6). | [ROM] |
 | Trainers never use items | The item-use step was removed. Full Restores listed in trainer data are never used. | [ROM] |
 | The AI sees everything | It reads your real moves, ability, held item, stats, stat stages and speed, including whether your Quick Claw will activate this turn. | [CFRU] |
 | It predicts your move | Each turn it scores your moveset with its own rules and assumes you pick the top move. If none of your moves scores at least 100, it predicts you will switch. | [CFRU] |
