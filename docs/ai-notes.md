@@ -18,7 +18,9 @@ Source: CFRU commit b637a27 at `vendor/cfru/src/Battle_AI/`. Verified pieces in 
 - REMOVED AI item use: AI_TrySwitchOrUseItem asm (0x090C8262 path) has no ShouldAIUseItem call. Trainers never use items. Item section below is VOID for RR.
 - CHANGED ShouldSwitch 0x090D824C: returns FALSE if flag 0x1042 (puzzle battle) or flag 0x10C0 (unknown); then Random2()%4==0 -> no switch this turn (25%). Rest of order matches CFRU (absorb, wish, locked/semi-invuln, perish, wonder guard, bad moves, natcure/regen, yawn, sleep...).
 - VERIFIED CalcMostSuitableMonToSwitchInto 0x090D7168: +14/+31/+8/+17/+2/+2, -39/-15/-1, max 70/140, hazard 71/142, 50% ties. RR ADDITION: puzzle battle (0x1042) -> first valid mon in party order.
-- RR CUSTOM anti-cheese: battle script after player switch callasm 0x090C8F04. Runs only if FlagGet(0x1034)=Hardcore Mode and !0x1042. Calls 0x090C8CA4 per AI mon that chose a move: requires CHECK_GOOD_MOVE, player in control, not Frontier, player chose switch, not Yawned. Triggers if player switched back to the mon from 2 switches ago (secondPreviousMonIn) OR switchesInARow>8 with chance 25% (9-11), 33% (12-15), 50% (16+). Then fully re-chooses move+target vs new mon (no Pursuit).
+- RR CUSTOM anti-cheese: battle script after player switch callasm 0x090C8F04. Runs only if FlagGet(0x1034)=Hardcore Mode and !0x1042. Calls 0x090C8CA4 per AI mon that chose a move: requires CHECK_GOOD_MOVE, player in control, not Frontier, player chose switch, not Yawned. Triggers if player switched back to the mon from 2 switches ago (secondPreviousMonIn) OR counter gNewBS+0x1D5 >8 with chance 25% (9-11), 33% (12-15), 50% (16+). RR CHANGED the counter vs CFRU's switchesInARow: +3 per player switch when AI side did not switch that round (0x090C02BE; CFRU +1, +2 Intimidate), -1 per battler at end of every turn if >0 (loop at 0x090911EE), reset to 0 on faint (0x0909EA9A); no reset on attacking (SetActionsAndBanksTurnOrder 0x0906FD40 only clears previousMonIn 0x1D9); turn-1 Intimidate preset removed. Matches community doc model.
+- Party-mon damage calc (AI_CalcPartyDmg 0x09086DD8 and AI_CalcMonDefDmg) uses 96% roll (0x60/100), same as CFRU. Used by switch-in scoring.
+- CanKnockOutFromParty 0x090DAA78 -> MoveKnocksOutFromParty 0x090DA9D0 -> damage 0x090DA8A4: all functional, so switch-in +31 KO bonus is live (community doc claims KO flags unused; code disagrees). Then fully re-chooses move+target vs new mon (no Pursuit).
 - Flags: 0x1034 = Hardcore Mode (options script 0x0904F0xx). 0x1042 = puzzle/trial battle (0x09051Axx scripts).
 - Var 0x5119 = special battle ID set before boss fights; a few AI rules special-case values 0x10 / 0x12.
 
@@ -44,6 +46,14 @@ Source: CFRU commit b637a27 at `vendor/cfru/src/Battle_AI/`. Verified pieces in 
 - SMACK_DOWN: NEW 50% +3 vs airborne target.
 - Status, setup, Protect bonus (ShouldProtect), Fake Out, pivot, Pursuit, Encore, Destiny Bond, Trick Room, recovery (ShouldRecover) match.
 - IncreaseViability value histogram consistent with CFRU (85 vs 100 call sites, all values present in source).
+
+### Doubles (ROM-verified, matches CFRU)
+- UpdateBestDoublesKillingMoves 0x090C7524: loops attackers in gBanksByTurnOrder (speed order), per foe calls UpdateBestDoubleKillingMoveScore 0x090E03C4.
+- 0x090E03C4: 75% Wide Guard check (<0x4b), +4 hit foe, +2 KO (Destiny Bond foe: KO bonus removed), +1 strongest, weak hit with 2 foes: -3 (<1/4 maxHP) / -2 (<1/3), 50%+ secondary effects (>0x31) keep full credit, partner handling, -3 hit partner.
+- GetDoubleKillingScore 0x090E0E24: returns 0 unless move == stored best move for (atk, def); recalculates once if partner Protects vs spread move.
+- IncreaseDoublesDamageViability 0x090C6E5C: viability += gDoublesDamageViabilityMapping[class-11][score].
+- ChooseMoveOrAction (singles+doubles) 0x090C82C0: per-target best move with Random2 tie, ally needs >=101 (0x65), ChooseTarget tie-breaks via 0x090C470C (KO priority: player side, or attacker class when aiFlags>1), 0x090C4744 (most damage: attacker class 25% when aiFlags>2), 0x090C478C (dangerous: attacker class when aiFlags>2), 50% damage threshold (0x32), final Random2 among tied targets, partner fallback if score <0.
+- Attacker classes (IsClassDoublesAttacker): All-Out, Setup, Trick Room Attacker.
 
 ### Switching RNG
 - ROM random points match CFRU (absorb 50% vs stall, Regenerator 50%, asleep 50%(+50%), Leech Seed 25%, save sweeper 50/75%, ties 50%) + RR 25% skip. RR uses Random2 here.
