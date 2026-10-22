@@ -2,6 +2,8 @@
 
 How the enemy AI in **Pokemon Radical Red 4.1** decides what to do each turn: which move it picks, when it switches, which Pokemon it sends in, and how it targets in double battles. Every finding is checked against the game's actual code, not guessed from play.
 
+> **Status:** every finding here comes from reading the ROM's code; nothing has been tested in play yet. I'm using these docs as a reference while playtesting, and will update them where the game behaves differently than the code suggests. Keep in mind that some behavior, in the code or in play, may come from a bug rather than what the code seems intended to do (the hazard re-use quirk in `docs/move-or-switch.md` is one likely example), so "what the AI does" and "what the AI was meant to do" are not always the same.
+
 ## What is Radical Red?
 
 [Radical Red](https://www.pokecommunity.com/threads/pok%C3%A9mon-radical-red-version-4-1-released-gen-9-dlc-pokemon-character-customization-now-available.437688/) is a difficulty-focused ROM hack of Pokemon FireRed for the Game Boy Advance, made by Soupercell and koala4. It adds Pokemon, moves and abilities from later generations, Mega Evolution, level caps and much harder trainers and bosses, with optional modes such as Restricted, Hardcore and Minimal Grinding.
