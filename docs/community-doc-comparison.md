@@ -80,7 +80,7 @@ Extra details the community doc does not mention:
 All of these are confirmed in the ROM (see `docs/ai-guide.md`, `docs/move-or-switch.md`, `docs/post-ko-switch-in.md`):
 
 - **Every trainer uses the full smart AI.** The per-trainer AI setting is ignored. Wild Pokemon pick moves at random.
-- **Difficulty modes do not change AI intelligence.** Hardcore only adds the anti-switch rule.
+- **Difficulty modes use the same AI.** Normal, Restricted, Hardcore and Easy share the same decision logic; the only difference is Hardcore's anti-switch rule.
 - **Trainers never use items.**
 - **On 25% of turns the AI skips all switch logic.**
 - **Damage assumptions:** 93% roll (9th of 16) for the active Pokemon, 96% (12th of 16) for benched Pokemon.

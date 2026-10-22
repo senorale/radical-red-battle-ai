@@ -23,7 +23,7 @@ As of 2026-10-22. Built from the CFRU source (the engine Radical Red is built on
 |---|---|---|
 | Every trainer uses the full smart AI | Radical Red ignores the per-trainer AI setting and gives every trainer battle the full "Check Bad Move + Check Good Move" AI. There are no "dumb" route trainers. | [ROM] |
 | Wild Pokemon act randomly | Wild battles get no scoring scripts, so they pick any usable move at random. Scripted legendary encounters use a lighter "semi-smart" AI. | [ROM] |
-| Difficulty does not change AI intelligence | No difficulty variable is read when picking AI flags. Hardcore Mode only adds the anti-switch rule (`move-or-switch.md` section 6). | [ROM] |
+| Difficulty modes use the same AI | Normal, Restricted, Hardcore and Easy all use the same AI decision logic. The only difference is Hardcore's anti-switch rule (`move-or-switch.md` section 6). | [ROM] |
 | Trainers never use items | The item-use step was removed. Full Restores listed in trainer data are never used. | [ROM] |
 | The AI sees everything | It reads your real moves, ability, held item, stats, stat stages and speed, including whether your Quick Claw will activate this turn. | [CFRU] |
 | It predicts your move | Each turn it scores your moveset with its own rules and assumes you pick the top move. If none of your moves scores at least 100, it predicts you will switch. | [CFRU] |
