@@ -1,8 +1,8 @@
 # Radical Red Battle AI
 
-How the enemy AI in **Pokemon Radical Red 4.1** decides what to do each turn: which move it picks, when it switches, which Pokemon it sends in, and how it targets in double battles. Every finding is checked against the game's actual code, not guessed from play.
+How the enemy AI in **Pokemon Radical Red 4.1** decides what to do each turn: which move it picks, when it switches, which Pokemon it sends in, and how it targets in double battles. Every finding comes from the game's actual code, not guessed from play.
 
-> **Status: beta.** All content in this repo is beta and has not been verified. The project began on 2026-10-22, and everything written from that start is beta: every finding comes from reading the ROM's code, and nothing has been tested in play yet. As findings are verified, they will be marked as verified, so it is clear which content is still beta from the start of the project and which has been confirmed. I'm using these docs as a reference while playtesting, and will update them where the game behaves differently than the code suggests. Keep in mind that some behavior, in the code or in play, may come from a bug rather than what the code seems intended to do (the hazard re-use quirk in `docs/singles/move-or-switch.md` is one likely example), so "what the AI does" and "what the AI was meant to do" are not always the same.
+> **Status: beta.** All content in this repo is beta. Every finding comes from reading the ROM's decompiled code, and none of it has been verified by a human in play yet. Code findings and human verification are tracked separately (see "Tags" below): a finding gets **[VERIFIED]** only after a person has tested it in game, and right now nothing has that tag. I'm using these docs as a reference while playtesting, and will update them where the game behaves differently than the code suggests. Keep in mind that some behavior, in the code or in play, may come from a bug rather than what the code seems intended to do (the hazard re-use quirk in `docs/singles/move-or-switch.md` is one likely example), so "what the AI does" and "what the AI was meant to do" are not always the same.
 
 ## What is Radical Red?
 
@@ -12,7 +12,7 @@ Under the hood it is built on the **Complete Fire Red Upgrade (CFRU)** engine, w
 
 ## Version: 4.1 only
 
-Everything here was verified against **Radical Red 4.1**. ROM addresses, rules and numbers can change in any other version.
+Everything here was researched against **Radical Red 4.1**. ROM addresses, rules and numbers can change in any other version.
 
 | ROM | SHA1 |
 |---|---|
@@ -42,10 +42,20 @@ A few highlights:
 ## How this was compiled
 
 1. **Baseline from CFRU.** Read the open-source CFRU battle AI (`src/Battle_AI/`) to learn how the AI is structured.
-2. **Confirm Radical Red uses it.** Scanned the ROM for CFRU's code hooks (540 of 624 present) and located the AI script table and trainer data.
+2. **Check Radical Red uses it.** Scanned the ROM for CFRU's code hooks (540 of 624 present) and located the AI script table and trainer data.
 3. **Decompile the real code.** Used Ghidra in headless mode to decompile Radical Red's AI functions. Custom scripts fix three things that otherwise break the output for CFRU code: long calls through register stubs, Thumb switch-table helpers, and long branches inside a function.
-4. **Compare rule by rule.** Diffed each decompiled function against the CFRU source, case by case, and checked key spots in raw assembly. Every rule in the docs is tagged **[ROM]** (confirmed in Radical Red's code) or **[CFRU]** (from the source, with the surrounding Radical Red code matching).
+4. **Compare rule by rule.** Diffed each decompiled function against the CFRU source, case by case, and checked key spots in raw assembly. Every rule in the docs is tagged (see "Tags" below).
 5. **Cross-check with the community.** Compared the results with the community-maintained AI doc and recorded where the code agrees or disagrees.
+
+## Tags
+
+| Tag | Meaning | Human-verified? |
+|---|---|---|
+| **[ROM]** | Found by reading Radical Red's own decompiled code. | No |
+| **[CFRU]** | From the CFRU source, with the surrounding Radical Red code matching. | No |
+| **[VERIFIED]** | Tested in game by a person and the game behaves as described. | Yes |
+
+[ROM] and [CFRU] are code findings only. No finding is tagged [VERIFIED] yet.
 
 Several CFRU behaviors turned out to be different in Radical Red, for example the hardcoded smart AI for all trainers, the removed item use, the reworked anti-switch counter and changes to Protect, Taunt, Counter, Sucker Punch and hazard scoring.
 
@@ -53,11 +63,11 @@ Several CFRU behaviors turned out to be different in Radical Red, for example th
 
 The scripts are in [`tools/`](tools/README.md). You need your own copies of both ROMs in `roms/` (not included), a clone of CFRU in `vendor/cfru`, and Ghidra with Java 21 (`brew install openjdk@21 ghidra`). See [`tools/README.md`](tools/README.md) for setup and usage.
 
-## Not yet verified
+## Open questions
 
 - The meaning of game flag `0x10C0`, which blocks AI switching when set.
 - Which bosses use special battle IDs `0x10` / `0x12`, which have small hazard and ability exceptions.
-- No live emulator testing yet. All findings come from reading the code.
+- No human verification in play yet. All findings come from reading the code.
 
 ## Disclaimer
 

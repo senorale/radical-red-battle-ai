@@ -6,7 +6,7 @@ As of 2026-10-22. Compares the community Radical Red AI doc ([Google Doc](https:
 
 - **Most of the community doc holds up.** Its switch conditions and doubles priority tables match the code closely, which makes sense because they appear to come from CFRU/Unbound source.
 - **4 contradictions** where the code says something different (section 1), one of them minor.
-- **1 claim confirmed exactly that we had wrong** (the anti-switch counter, section 2).
+- **1 claim matching the ROM code exactly that we had wrong** (the anti-switch counter, section 2).
 - **Several important behaviors are missing** from the community doc (section 4).
 
 Status key:
@@ -14,9 +14,9 @@ Status key:
 | Status | Meaning |
 |---|---|
 | Contradicted | The ROM code does something different. |
-| Confirmed (ROM) | Checked in the Radical Red code and it matches. |
+| Matches ROM code | Checked in the Radical Red code and it matches. |
 | Consistent (CFRU) | Matches CFRU source; the RR function exists but this detail was not line-checked. |
-| Not verified | We did not check it. |
+| Not checked | We did not check it. |
 
 ## 1. Contradictions
 
@@ -29,7 +29,7 @@ Status key:
 
 The last row is a minor wording point, but it can flip a switch-in decision when stats are close.
 
-## 2. Confirmed exactly (and corrected our own guide)
+## 2. Matches exactly (and corrected our own guide)
 
 | Topic | Community doc says | ROM shows |
 |---|---|---|
@@ -49,7 +49,7 @@ Extra details the community doc does not mention:
 
 | Community section | Status | Notes |
 |---|---|---|
-| Hard Switch ("this is just Unbound AI") | Not verified | Not a separate function in CFRU or RR. Closest match is ShouldSwitchToAvoidDeath. |
+| Hard Switch ("this is just Unbound AI") | Not checked | Not a separate function in CFRU or RR. Closest match is ShouldSwitchToAvoidDeath. |
 | ShouldSwitchIfOnlyBadMovesLeft | **Contradicted** (switch-in rule) | See section 1. Rest of the criteria not line-checked. |
 | ShouldSwitchToAvoidDeath | Consistent (CFRU) | Slower or dies to priority, no Destiny Bond, paralyzed not below 33%, hazards under 33%, HP above 20% unless the switch-in has a perfect score. The community doc says the 20% exception needs "outspeed + resist all"; CFRU requires the maximum switch score (70), which also needs KO and revenge-kill points. |
 | ShouldSaveSweeperForLater | Consistent (CFRU) | Including the 25% chance (if the AI can 2HKO you) vs 50% otherwise, the Destiny Bond and Choice Lock cases. |
@@ -64,20 +64,20 @@ Extra details the community doc does not mention:
 
 | Community section | Status | Notes |
 |---|---|---|
-| Throat Chop bonus only if you have a sound move | Not verified | |
-| Doubles role ladders (Trick Room, Utility, Phazer, Team Support, Setup Attacker, All-Out Attacker) | Confirmed (ROM) | The damage-priority table in the ROM (`0x093504B0`) is byte-identical to CFRU, and the ladders match CFRU's strategy file. |
+| Throat Chop bonus only if you have a sound move | Not checked | |
+| Doubles role ladders (Trick Room, Utility, Phazer, Team Support, Setup Attacker, All-Out Attacker) | Matches ROM code | The damage-priority table in the ROM (`0x093504B0`) is byte-identical to CFRU, and the ladders match CFRU's strategy file. |
 
 ### Post-KO switch-in
 
 | Community claim | Status |
 |---|---|
-| Resist all +17, Outspeeds +14, Walls +2, Takes half -1 | Confirmed (ROM) |
+| Resist all +17, Outspeeds +14, Walls +2, Takes half -1 | Matches ROM code |
 | No KO points | **Contradicted**: +31 KO and +8 revenge kill are live |
 | "In doubles the AI still looks for super effective and resisting all moves literally" | Consistent: doubles (and when more than one foe is out) uses type matchups instead of damage calcs |
 
 ## 4. Not in the community doc
 
-All of these are confirmed in the ROM (see `docs/ai-guide.md`, `docs/singles/move-or-switch.md`, `docs/singles/post-ko-switch-in.md`):
+All of these were found in the ROM code (see `docs/ai-guide.md`, `docs/singles/move-or-switch.md`, `docs/singles/post-ko-switch-in.md`):
 
 - **Every trainer uses the full smart AI.** The per-trainer AI setting is ignored. Wild Pokemon pick moves at random.
 - **Difficulty modes use the same AI.** Normal, Restricted, Hardcore and Easy share the same decision logic; the only difference is Hardcore's anti-switch rule.
@@ -95,7 +95,7 @@ All of these are confirmed in the ROM (see `docs/ai-guide.md`, `docs/singles/mov
   - Hazard "already set" check is skipped when you have 3 or fewer mons (singles).
   - Speed-lowering attacks and Smack Down bonuses are 50%.
 - Puzzle/trial battles send Pokemon in fixed order and never switch.
-- **How doubles actually picks moves and targets.** The community doc has the role priority ladders but not the rest of the doubles logic (all ROM-verified, see `docs/doubles/moves-and-targets.md` and `docs/doubles/post-ko-switch-in.md`):
+- **How doubles actually picks moves and targets.** The community doc has the role priority ladders but not the rest of the doubles logic (all found in the ROM code, see `docs/doubles/moves-and-targets.md` and `docs/doubles/post-ko-switch-in.md`):
   - **How roles are assigned** from the moveset. Only All-Out, Setup and Trick Room Attackers count as "attackers".
   - **Only one damaging move per target gets the ladder bonus.** Its 0 to 12 score is +4 per foe hit, +2 per KO, +1 if strongest, reduced for weak hits, and -3 for hitting its partner. Other attacks stay at base 100.
   - **Random tie-breaks** between equal moves, and between equal targets for non-attacker roles. Attackers prefer KOs, then threats, then most damage only 25% of the time.

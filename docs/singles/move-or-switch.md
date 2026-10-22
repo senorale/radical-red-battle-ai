@@ -25,7 +25,7 @@ Practical meaning: if it can kill you first, it almost always does. If it cannot
 
 ## 3. Status and utility moves
 
-Everything labeled "Radical Red" in this table is [ROM]. The base conditions (when it likes setup, sleep, Protect, recovery) come from CFRU helper functions whose call sites were confirmed in the ROM but whose bodies were not line-checked, so treat them as [CFRU].
+Everything labeled "Radical Red" in this table is [ROM]. The base conditions (when it likes setup, sleep, Protect, recovery) come from CFRU helper functions whose call sites were found in the ROM but whose bodies were not line-checked, so treat them as [CFRU].
 
 | Move type | When the AI likes it |
 |---|---|
@@ -57,7 +57,7 @@ Everything labeled "Radical Red" in this table is [ROM]. The base conditions (wh
 - Prankster status into Dark types.
 - Two-turn moves when you can Protect or KO it during the charge.
 
-## 4. When it switches out [order from CFRU, presence confirmed in ROM]
+## 4. When it switches out [order from CFRU, presence found in ROM]
 
 Only checked on 75% of turns. Never when trapped. The first matching rule wins:
 

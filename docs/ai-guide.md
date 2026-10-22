@@ -13,8 +13,9 @@ As of 2026-10-22. Built from the CFRU source (the engine Radical Red is built on
 
 ## How to read these docs
 
-- **[ROM]** = confirmed by reading Radical Red's own compiled code.
-- **[CFRU]** = from the CFRU source. The surrounding Radical Red code was checked and matches, but this specific rule was not line-checked.
+- **[ROM]** = found by reading Radical Red's own decompiled code. A code finding, not human-verified.
+- **[CFRU]** = from the CFRU source. The surrounding Radical Red code was checked and matches, but this specific rule was not line-checked. Not human-verified.
+- **[VERIFIED]** = tested in game by a person. Nothing has this tag yet.
 - **Score** = every move starts at 100 each turn. Rules add or subtract points. The highest score wins. Ties are broken at random. Only the order matters, so "+9" beats "+2".
 - "You" means the player. "AI" means the opposing trainer's Pokemon.
 
@@ -41,11 +42,11 @@ As of 2026-10-22. Built from the CFRU source (the engine Radical Red is built on
 | Fixed damage | Super Fang = half HP, Seismic Toss/Night Shade = level, Endeavor and Pain Split exact. | [ROM] |
 | Strongest move | Highest damage, capped at your HP. When several moves all KO, it prefers: higher priority, then better accuracy, then non-contact (if contact is punished), then no recoil, then no stat drop, then random. Counter/Mirror Coat/Future Sight never win a tie. Pursuit is preferred once you have shown you like switching. | [CFRU] |
 
-## 3. Not yet verified
+## 3. Open questions
 
 - The exact meaning of game flag 0x10C0 (it blocks AI switching when set).
 - Which bosses use special battle ID 0x10 / 0x12 (minor hazard and ability exceptions).
-- No live testing in an emulator yet. All results come from reading the code.
+- No human verification in play yet. All results come from reading the code.
 
 ## Sources
 

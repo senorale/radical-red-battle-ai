@@ -1,8 +1,8 @@
-# Verify Radical Red AI claims against rr.gba
+# Check Radical Red AI claims against rr.gba code
 
-Method: Ghidra headless decompile of RR functions (Thumb, base 0x08000000), labeled with CFRU symbols (BPRE.ld, hook targets, routine pointers). Compare each decompiled function against CFRU source (`vendor/cfru/src/Battle_AI`, commit b637a27). Mark each claim VERIFIED / CHANGED / UNVERIFIED.
+Method: Ghidra headless decompile of RR functions (Thumb, base 0x08000000), labeled with CFRU symbols (BPRE.ld, hook targets, routine pointers). Compare each decompiled function against CFRU source (`vendor/cfru/src/Battle_AI`, commit b637a27). Mark each claim MATCHES / CHANGED / UNCHECKED. These are code findings, not human verification.
 
-Already verified by data scan:
+Already checked by data scan:
 - AI script table 0x091491E0 (Negatives/SemiSmart/Positives/Roaming/Safari/FirstBattle).
 - Trainer aiFlags (574 x 0x1, 168 x 0x7) read by CFRU via pointer at 0x0800FC00.
 - Doubles damage priority table identical (0x093504B0).
