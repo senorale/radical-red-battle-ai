@@ -2,7 +2,7 @@
 
 How the enemy AI in **Pokemon Radical Red 4.1** decides what to do each turn: which move it picks, when it switches, which Pokemon it sends in, and how it targets in double battles. Every finding is checked against the game's actual code, not guessed from play.
 
-> **Status:** every finding here comes from reading the ROM's code; nothing has been tested in play yet. I'm using these docs as a reference while playtesting, and will update them where the game behaves differently than the code suggests. Keep in mind that some behavior, in the code or in play, may come from a bug rather than what the code seems intended to do (the hazard re-use quirk in `docs/singles/move-or-switch.md` is one likely example), so "what the AI does" and "what the AI was meant to do" are not always the same.
+> **Status: beta.** All content in this repo is beta and has not been verified. The project began on 2026-10-22, and everything written from that start is beta: every finding comes from reading the ROM's code, and nothing has been tested in play yet. As findings are verified, they will be marked as verified, so it is clear which content is still beta from the start of the project and which has been confirmed. I'm using these docs as a reference while playtesting, and will update them where the game behaves differently than the code suggests. Keep in mind that some behavior, in the code or in play, may come from a bug rather than what the code seems intended to do (the hazard re-use quirk in `docs/singles/move-or-switch.md` is one likely example), so "what the AI does" and "what the AI was meant to do" are not always the same.
 
 ## What is Radical Red?
 
