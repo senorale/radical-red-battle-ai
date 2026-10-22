@@ -4,7 +4,7 @@ How the Radical Red 4.1 AI picks moves and targets in double battles. Read `../a
 
 Doubles uses different move scoring from singles. These rules apply whenever both sides are not down to one Pokemon each. Once it is 1 vs 1, the singles rules in `../singles/move-or-switch.md` apply. All of this was checked in the ROM and matches CFRU.
 
-## Step 1: each AI Pokemon gets a role [CFRU, ladders ROM-verified]
+## Step 1: each AI Pokemon gets a role [ROM]
 
 The role comes from its moveset, checked in this order:
 
@@ -15,11 +15,19 @@ The role comes from its moveset, checked in this order:
 | Utility | Has Follow Me/Rage Powder, or Fake Out plus Intimidate or a pivot move |
 | Phazer | Has Roar/Whirlwind/Haze/Clear Smog (Setup Attacker instead if it also has 3 attacks, or 2 attacks plus Protect) |
 | All-Out Attacker | 4 attacks, or 3 attacks plus Protect |
-| Setup Attacker | Attacks plus offensive boosting moves adding up to 3 (or 2 with Protect) |
+| Setup Attacker | Attacks plus offensive boosting moves adding up to exactly 3 (or exactly 2 with Protect) |
 | Team Support | Screens, Tailwind, Safeguard, Heal Bell and similar |
 | Utility (default) | Anything else |
 
 Only **All-Out Attacker, Setup Attacker and Trick Room Attacker** count as "attackers" for the tie-break rules in step 4.
+
+Details from the ROM:
+
+- **Inputs are the moveset, the ability and the held item.** Intimidate is the only ability checked (Utility). Room Service, Iron Ball and Macho Brace are the only items checked (Trick Room Attacker).
+- **Fake Out and Nuzzle do not count as attacks.** Fake Out plus 3 attacks is not "4 attacks".
+- **Setup Attacker needs exactly 3, a Radical Red change.** Current CFRU uses "3 or more". Radical Red still has the older "exactly 3" check, so a moveset adding up to 4 without Protect skips Setup Attacker. Swords Dance, Dragon Dance or Nasty Plot plus 3 attacks, or 2 attacks plus 2 boosting moves, becomes **Utility** (or Team Support with a screen or similar). That means a lower damage ladder and random target tie-breaks.
+- **Rototiller counts as a boost for any Grass type**, with no grounded check (older CFRU behavior).
+- **Doubles roles apply only while both of your Pokemon or its own partner are alive.** Otherwise it uses the singles roles.
 
 ## Step 2: only ONE damaging move per target gets a damage bonus [ROM]
 
