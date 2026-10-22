@@ -78,7 +78,8 @@ The AI processes its two Pokemon in speed order, so the slower one knows what th
 | Protect | Second Protect in a row has no penalty in Radical Red; third gets -10. | [ROM] |
 | Penalties | All "avoid" penalties from `move-or-switch.md` are doubled. | [CFRU] |
 | Thaw | A frozen AI Pokemon with a thawing move gets +20. | [ROM] |
-| Switching | Most switch rules in `move-or-switch.md` are singles-only. In doubles it mainly switches to absorb your predicted attack, when it has only bad moves left against both foes, or for Yawn/asleep/residual damage. Switch-ins use type matchups, not damage calcs (`post-ko-switch-in.md`). | [CFRU] |
+| Switching | Most switch rules in `move-or-switch.md` are singles-only. In doubles it mainly switches to absorb your predicted attack, when it has only bad moves left against both foes, or for Yawn/asleep/residual damage. | [CFRU] |
+| Replacements after a KO | Scored against both of your Pokemon and summed. Its offense uses damage calcs; your offense uses only the type chart; a switch-in you would KO loses just 1 point. Details in `post-ko-switch-in.md` section 4. | [ROM] |
 
 ## Priority ladders
 

@@ -55,6 +55,10 @@ Source: CFRU commit b637a27 at `vendor/cfru/src/Battle_AI/`. Verified pieces in 
 - ChooseMoveOrAction (singles+doubles) 0x090C82C0: per-target best move with Random2 tie, ally needs >=101 (0x65), ChooseTarget tie-breaks via 0x090C470C (KO priority: player side, or attacker class when aiFlags>1), 0x090C4744 (most damage: attacker class 25% when aiFlags>2), 0x090C478C (dangerous: attacker class when aiFlags>2), 50% damage threshold (0x32), final Random2 among tied targets, partner fallback if score <0.
 - Attacker classes (IsClassDoublesAttacker): All-Out, Setup, Trick Room Attacker.
 
+### Doubles post-KO replacement (ROM)
+- OpponentHandleChoosePokemon 0x09068A28 (hook target): if no forced switchout index, recalc if stored best is none/dead (0x090D7168), then GetMostSuitableMonToSwitchInto 0x090D8230 (returns runner-up if top already chosen by partner); fallback = first valid party mon; RemoveBestMonToSwitchInto 0x090D9D78; TryRechoosePartnerMove. RR dropped CFRU's pivotTo branch and the partner-range check.
+- In 0x090D7168: loop over gBattlersCount/2 foes, scores summed. Offense: CanKnockOutFromParty always (damage calc). Defense: damage calc only if (singles or ViableMonCountFromBank(foe)==1) and aiFlags>1, else type calc (SE -> weak -1). In doubles, faintsFromMove -> -1 only (doubles branch jumps to weak decrement). Max 140, hazard override 0x8E (142).
+
 ### Switching RNG
 - ROM random points match CFRU (absorb 50% vs stall, Regenerator 50%, asleep 50%(+50%), Leech Seed 25%, save sweeper 50/75%, ties 50%) + RR 25% skip. RR uses Random2 here.
 
