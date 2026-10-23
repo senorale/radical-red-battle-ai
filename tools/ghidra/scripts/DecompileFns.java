@@ -336,16 +336,22 @@ public class DecompileFns extends GhidraScript {
 		return false;
 	}
 
-	// True if code at t reaches "bx lr" before any other return, following unconditional "b".
-	// A long-branch target belongs to a function that saved lr and returns via pop, so this marks
-	// a leaf function called with bl (e.g. 0x09074CC4 from 0x0906CFCE), not a label.
+	// True if code at t reaches "bx lr" before any other return, following unconditional "b", or
+	// ends in a tail call "ldr rN, =fn; bx rN". A long-branch target belongs to a function that
+	// saved lr and returns via pop, so this marks a leaf function called with bl (0x09074CC4 from
+	// 0x0906CFCE) or a hand-written hook thunk (0x090001CE: mov r2,#0; ldr r3,=GetMonData; bx r3).
 	private boolean returnsViaLr(Address t) throws Exception {
 		Memory mem = currentProgram.getMemory();
 		Address a = t;
+		int prev = -1;
 		for (int i = 0; i < 256; i++) {
 			int h = mem.getShort(a) & 0xFFFF;
 			if (h == 0x4770) return true;                       // bx lr
+			int rn = (h >> 3) & 0xF;
+			if ((h & 0xFF87) == 0x4700 && rn < 8 && prev == (0x4800 | rn << 8))
+				return true;                                    // ldr rN, =fn; bx rN
 			if ((h & 0xFF00) == 0xBD00 || (h & 0xFF87) == 0x4700) return false; // pop {..pc}, bx rN
+			prev = h & 0xFF00;
 			if ((h & 0xF800) == 0xE000) {                       // b label
 				int off = h & 0x7FF;
 				if ((off & 0x400) != 0) off -= 0x800;
@@ -412,7 +418,12 @@ public class DecompileFns extends GhidraScript {
 		ReferenceManager rm = currentProgram.getReferenceManager();
 		Memory mem = currentProgram.getMemory();
 		AddressSetView body = f.getBody();
-		Set<Address> seen = new HashSet<>();
+		// An instruction is revisited when reached with a register state not seen there before
+		// (capped), so every path to a call site is considered. One call site can get different
+		// targets on different paths (0x090C365A: ChooseWildMonIndex_Land on one path, _WaterRock
+		// on the other); such a call is left unresolved rather than given one path's name.
+		Map<Address, Set<Map<String, Long>>> seen = new HashMap<>();
+		Map<Address, Set<Long>> siteValues = new LinkedHashMap<>(); // -1 = unknown on some path
 		Deque<Object[]> work = new ArrayDeque<>();
 		work.add(new Object[] { f.getEntryPoint(), new HashMap<String, Long>() });
 		while (!work.isEmpty()) {
@@ -420,7 +431,14 @@ public class DecompileFns extends GhidraScript {
 			Address a = (Address) item[0];
 			@SuppressWarnings("unchecked")
 			Map<String, Long> regs = (Map<String, Long>) item[1];
-			while (a != null && body.contains(a) && seen.add(a)) {
+			while (a != null && body.contains(a)) {
+				Set<Map<String, Long>> states = seen.computeIfAbsent(a, k -> new HashSet<>());
+				if (states.contains(regs)) break;
+				if (states.size() >= 16) { // too many paths: go on with nothing known (calls stay unresolved)
+					regs.clear();
+					if (states.contains(regs)) break;
+				}
+				states.add(new HashMap<>(regs));
 				Instruction ins = listing.getInstructionAt(a);
 				if (ins == null) break;
 				String m = ins.getMnemonicString();
@@ -429,15 +447,8 @@ public class DecompileFns extends GhidraScript {
 					int hw = mem.getShort(stub) & 0xFFFF;
 					if ((hw & 0xFF87) == 0x4700) { // bx rN
 						Long value = regs.get("r" + ((hw >> 3) & 0xF));
-						if (value != null && (value & 1) == 1 && value - 1 >= 0x08000000L && value - 1 < 0x0A000000L) {
-							Address t = stub.getAddressSpace().getAddress(value - 1);
-							if (getFunctionAt(t) == null) {
-								new DisassembleCommand(t, null, true).applyTo(currentProgram, monitor);
-								new CreateFunctionCmd(t).applyTo(currentProgram, monitor);
-							}
-							Reference r = rm.addMemoryReference(ins.getAddress(), t, RefType.CALL_OVERRIDE_UNCONDITIONAL, SourceType.USER_DEFINED, 0);
-							rm.setPrimary(r, true);
-						}
+						boolean ok = value != null && (value & 1) == 1 && value - 1 >= 0x08000000L && value - 1 < 0x0A000000L;
+						siteValues.computeIfAbsent(ins.getAddress(), k -> new HashSet<>()).add(ok ? value - 1 : -1L);
 					}
 				}
 				if (ins.getFlowType().isCall())
@@ -448,8 +459,8 @@ public class DecompileFns extends GhidraScript {
 				String op0 = ins.getNumOperands() >= 1 ? ins.getDefaultOperandRepresentation(0) : "";
 				java.util.regex.Matcher slot = SP_SLOT.matcher(op1);
 				if (m.equals("ldr") && ins.getReferencesFrom().length > 0 && op1.startsWith("[0x")) {
-					Address lit = ins.getReferencesFrom()[0].getToAddress();
-					regs.put(op0, mem.getInt(lit) & 0xFFFFFFFFL);
+					long v = mem.getInt(ins.getReferencesFrom()[0].getToAddress()) & 0xFFFFFFFFL;
+					if ((v & 1) == 1) regs.put(op0, v); // only Thumb code addresses can be call targets
 				} else if (m.equals("ldr") && slot.matches() && regs.containsKey("sp+" + slot.group(1))) {
 					regs.put(op0, regs.get("sp+" + slot.group(1))); // function pointer kept on the stack
 				} else if (m.equals("str") && slot.matches()) {
@@ -464,6 +475,16 @@ public class DecompileFns extends GhidraScript {
 					if (r.getReferenceType() == RefType.COMPUTED_JUMP) work.push(new Object[] { r.getToAddress(), new HashMap<>(regs) });
 				a = ins.getFallThrough();
 			}
+		}
+		for (Map.Entry<Address, Set<Long>> e : siteValues.entrySet()) {
+			if (e.getValue().size() != 1 || e.getValue().contains(-1L)) continue;
+			Address t = e.getKey().getAddressSpace().getAddress(e.getValue().iterator().next());
+			if (getFunctionAt(t) == null) {
+				new DisassembleCommand(t, null, true).applyTo(currentProgram, monitor);
+				new CreateFunctionCmd(t).applyTo(currentProgram, monitor);
+			}
+			Reference r = rm.addMemoryReference(e.getKey(), t, RefType.CALL_OVERRIDE_UNCONDITIONAL, SourceType.USER_DEFINED, 0);
+			rm.setPrimary(r, true);
 		}
 	}
 }
