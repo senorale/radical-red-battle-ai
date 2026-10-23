@@ -25,6 +25,7 @@ Generated output goes to `tools/ghidra/build/`, which is git-ignored because it 
 
 | Script | Usage | What it does |
 |---|---|---|
+| `full.sh` | `full.sh [start] [end]` | Decompiles every function in a range (default `09000000`-`09160000`, the CFRU/RR code) into `build/full/`, runs `postproc.py`, and writes `build/full/index.tsv`. Long-running; run it in its own terminal. Safe to stop and rerun, done functions are skipped. Progress: `tail -f tools/ghidra/build/full.log`. |
 | `run.sh` | `run.sh <outdir> <depth> <addr>...` | Decompiles functions, and their callees up to `<depth>`. |
 | `postproc.py` | `postproc.py roms/rr.gba tools/ghidra/build/symbols.txt <outdir>` | Replaces raw addresses in decompiled output with symbol names. Run after `run.sh`. |
 | `asm.sh` | `asm.sh <outfile> <addr>...` | Disassembles whole functions. |
