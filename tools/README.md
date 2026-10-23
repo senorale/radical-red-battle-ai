@@ -27,6 +27,7 @@ Generated output goes to `tools/ghidra/build/`, which is git-ignored because it 
 | Script | Usage | What it does |
 |---|---|---|
 | `rr_ai_viewer.lua` | mGBA 0.11+ development build, Tools > Scripting > Load script | Breaks inside RR's move-choice function and prints each enemy decision: every move's final score against every target considered, ties, and the move and target chosen. Addresses and evidence are in the script header. |
+| `run_viewer.sh` | `tools/mgba/run_viewer.sh [rom]` | Starts `~/Applications/mGBA.app` (0.11+) with the ROM and the viewer loaded (`--script`). |
 | `test_viewer.lua` | `lua tools/mgba/test_viewer.lua roms/rr.gba tools/mgba/rr_ai_viewer.lua` | Offline test: fakes mGBA, reads names from the real ROM, fires the breakpoints with a made-up doubles decision. |
 
 Stable mGBA (0.10) has no breakpoint API, so the viewer needs a development build from https://mgba.io/downloads.html#development-downloads.
