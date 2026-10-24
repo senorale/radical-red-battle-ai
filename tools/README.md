@@ -31,6 +31,8 @@ Generated output goes to `tools/ghidra/build/`, which is git-ignored because it 
 | `test_viewer.lua` | `lua tools/mgba/test_viewer.lua roms/rr.gba tools/mgba/rr_ai_viewer.lua` | Offline test: fakes mGBA, reads names from the real ROM, fires the breakpoints with a made-up doubles decision. |
 | `rr_state.lua` | `require("rr_state")` from the other scripts | Battle-state reader: `gBattleMons` (CFRU layout), both parties (RR stores them unencrypted), battle type, weather, side statuses. Evidence in the header. |
 | `test_state.lua` | `lua tools/mgba/test_state.lua roms/rr.gba roms/states/ss2.ewram` | Offline test: runs `rr_state.lua` on EWRAM from a real savestate and prints the battle. |
+| `repeat_switch_test.lua`, `run_repeat_test.sh` | `tools/mgba/run_repeat_test.sh roms/rr.ss6 100 random` | Loads a savestate N times (mash A, uncapped speed), optionally with a different `Random2` seed each run, and tallies the enemy's first decision: switch (check, slot) or stay (move). Log: `tools/mgba/logs/repeat.log`. |
+| `check_random2.py` | `python3 -I tools/mgba/check_random2.py tools/mgba/logs/repeat.log` | Checks each run against ShouldSwitch's RR-only 25% no-switch roll. |
 | `extract_state.py` | `python3 -I tools/mgba/extract_state.py roms/rr.ss2 roms/states/ss2.raw roms/states/ss2.ewram` | Pulls the raw GBA state out of an mGBA `.ss*` (PNG chunk `gbAs`) and dumps EWRAM (raw offset `0x21000`). |
 | `dump_battle.py`, `dump_party.py`, `peek.py` | `python3 -I tools/mgba/<script> roms/states/ss2.ewram ...` | Raw views of `gBattleMons`, the parties, or any EWRAM range, for checking layouts. |
 
