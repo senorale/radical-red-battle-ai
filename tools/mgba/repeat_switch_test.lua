@@ -206,6 +206,13 @@ for spec in (os.getenv("RR_TEST_TRACE") or ""):gmatch("[^,]+") do
 end
 emu:setBreakpoint(on_scores, 0x090C83AC)
 emu:setBreakpoint(on_choice_entry, 0x090C82C0)
+-- RR_TEST_SEED_MAIN=turn: re-seed the main Random (0x03005000) as each AI decision starts
+-- (AI_TrySwitchOrUseItem 0x090C802C); the game re-seeds it at battle start, so a seed at load is lost.
+if os.getenv("RR_TEST_SEED_MAIN") == "turn" then
+	emu:setBreakpoint(function()
+		if phase == "run" then emu:write32(0x03005000, math.random(0, 0xFFFFFFFF)) end
+	end, 0x090C802C)
+end
 for _, c in ipairs(CHECKS) do
 	emu:setBreakpoint(function()
 		if phase == "run" and rec.checks and not rec.decided then
@@ -233,6 +240,7 @@ callbacks:add("frame", function()
 		last_frame = 0
 		assert(emu:loadStateFile(STATE), "could not load " .. tostring(STATE))
 		if SEED_MODE == "random" then emu:write32(RANDOM2, math.random(0, 0xFFFFFFFF)) end
+		if os.getenv("RR_TEST_SEED_MAIN") == "random" then emu:write32(0x03005000, math.random(0, 0xFFFFFFFF)) end -- main Random state
 		phase = "run"
 		return
 	end

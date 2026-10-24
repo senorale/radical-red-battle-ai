@@ -303,6 +303,18 @@ end
 local function emit(lines, rows)
 	lines[#lines + 1] = "  switch-in scores (latest scorer run for this side):"
 	for _, r in ipairs(rows) do lines[#lines + 1] = r end
+	-- Also log the switch block to decisions.jsonl (text lines, so a session can read it while playing).
+	if LOG_DIR then
+		pcall(function()
+			local f = io.open(LOG_DIR .. "decisions.jsonl", "a")
+			if f then
+				local esc = {}
+				for i, l in ipairs(lines) do esc[i] = '"' .. l:gsub('\\', '\\\\'):gsub('"', '\\"') .. '"' end
+				f:write('{"frame":', emu:currentFrame(), ',"switch":[', table.concat(esc, ","), ']}\n')
+				f:close()
+			end
+		end)
+	end
 	table.insert(history, table.concat(lines, "\n"))
 	while #history > MAX_HISTORY do table.remove(history, 1) end
 	redraw()
