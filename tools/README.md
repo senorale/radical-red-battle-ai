@@ -21,6 +21,10 @@ Generated output goes to `tools/ghidra/build/`, which is git-ignored because it 
 | `find_table.py` | `find_table.py roms/rr.gba` | Finds the AI script table (32 function pointers). |
 | `trainers.py` | `trainers.py roms/rr.gba` | Counts per-trainer AI flags in the trainer table. |
 | `find_names.py` | `find_names.py roms/rr.gba` | Finds the move and species name tables and how many pointers reference each (the game uses CFRU's expanded copies, not vanilla's). |
+| `find_refs.py` | `find_refs.py roms/rr.gba <hex value>... [--compare roms/base-fire-red.gba]` | Lists literal-pool words equal to a value (e.g. a RAM address), optionally marking where vanilla FireRed has the same word. |
+| `find_bl.py` | `find_bl.py roms/rr.gba <hex target>...` | Lists every Thumb `bl` in the ROM that calls a given address. |
+| `jump_table.py` | `jump_table.py roms/rr.gba <table> <entries> [first case] [u8\|u16\|s16]` | Decodes a GCC Thumb switch table (data after `bl 0x090003C4` / `0x090003D6` / `0x090003FC`). |
+| `move_info.py` | `move_info.py roms/rr.gba "Move Name"...` | Move ID and raw `gBattleMoves` entry (effect, power, type, ...) by name. |
 
 ## `tools/mgba/` (watch the AI live)
 
@@ -31,7 +35,8 @@ Generated output goes to `tools/ghidra/build/`, which is git-ignored because it 
 | `test_viewer.lua` | `lua tools/mgba/test_viewer.lua roms/rr.gba tools/mgba/rr_ai_viewer.lua` | Offline test: fakes mGBA, reads names from the real ROM, fires the breakpoints with a made-up doubles decision. |
 | `rr_state.lua` | `require("rr_state")` from the other scripts | Battle-state reader: `gBattleMons` (CFRU layout), both parties (RR stores them unencrypted), battle type, weather, side statuses. Evidence in the header. |
 | `test_state.lua` | `lua tools/mgba/test_state.lua roms/rr.gba roms/states/ss2.ewram` | Offline test: runs `rr_state.lua` on EWRAM from a real savestate and prints the battle. |
-| `repeat_switch_test.lua`, `run_repeat_test.sh` | `tools/mgba/run_repeat_test.sh roms/rr.ss6 100 random` | Loads a savestate N times (mash A, uncapped speed), optionally with a different `Random2` seed each run, and tallies the enemy's first decision: switch (check, slot) or stay (move). Log: `tools/mgba/logs/repeat.log`. |
+| `repeat_switch_test.lua`, `run_repeat_test.sh` | `tools/mgba/run_repeat_test.sh <state> [runs=50] [random\|fixed]` | Loads a savestate N times at uncapped speed (mashes A; after your Pokemon faints, alternates RIGHT and A to send out the next one), optionally with a different `Random2` seed each run, and tallies the enemy's decisions: switch (check, slot) or stay (move and scores). Env options: `RR_TEST_DECISIONS=N` records N turns per run; `RR_TEST_TRACE=ADDR:reg,...` logs a register each time an address runs (e.g. `090E1380:r1,090E1380:r14` for every score change and its caller). Log: `tools/mgba/logs/repeat.log`. |
+| `summarize_trace.py` | `python3 -I tools/mgba/summarize_trace.py tools/mgba/logs/repeat.log` | Per-turn breakdown of a traced run: each move's score changes with the rule that made them, and the roles computed. Trace with `RR_TEST_TRACE=090C4618:r0,090C46F4:r0,090E1380:r1,090E1380:r14,090E1394:r1,090E1394:r14`. |
 | `check_random2.py` | `python3 -I tools/mgba/check_random2.py tools/mgba/logs/repeat.log` | Checks each run against ShouldSwitch's RR-only 25% no-switch roll. |
 | `extract_state.py` | `python3 -I tools/mgba/extract_state.py roms/rr.ss2 roms/states/ss2.raw roms/states/ss2.ewram` | Pulls the raw GBA state out of an mGBA `.ss*` (PNG chunk `gbAs`) and dumps EWRAM (raw offset `0x21000`). |
 | `dump_battle.py`, `dump_party.py`, `peek.py` | `python3 -I tools/mgba/<script> roms/states/ss2.ewram ...` | Raw views of `gBattleMons`, the parties, or any EWRAM range, for checking layouts. |

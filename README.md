@@ -2,7 +2,7 @@
 
 How the enemy AI in **Pokemon Radical Red 4.1** decides what to do each turn: which move it picks, when it switches, which Pokemon it sends in, and how it targets in double battles. Every finding comes from the game's actual code, not guessed from play.
 
-> **Status: beta.** All content in this repo is beta. Every finding comes from reading the ROM's decompiled code, and none of it has been verified by a human in play yet. Code findings and human verification are tracked separately (see "Tags" below): a finding gets **[VERIFIED]** only after a person has tested it in game, and right now nothing has that tag. I'm using these docs as a reference while playtesting, and will update them where the game behaves differently than the code suggests. Keep in mind that some behavior, in the code or in play, may come from a bug rather than what the code seems intended to do (the hazard re-use quirk in `docs/singles/move-or-switch.md` is one likely example), so "what the AI does" and "what the AI was meant to do" are not always the same.
+> **Status: beta.** All content in this repo is beta. Most findings come from reading the ROM's decompiled code; a first set has been verified in play and is collected in [`docs/verified.md`](docs/verified.md). Code findings and human verification are tracked separately (see "Tags" below): a finding gets **[VERIFIED]** only after it has been tested in game. I'm using these docs as a reference while playtesting, and will update them where the game behaves differently than the code suggests. Keep in mind that some behavior, in the code or in play, may come from a bug rather than what the code seems intended to do (the hazard re-use quirk in `docs/singles/move-or-switch.md` is one likely example), so "what the AI does" and "what the AI was meant to do" are not always the same.
 
 ## What is Radical Red?
 
@@ -25,6 +25,7 @@ Start with [`docs/ai-guide.md`](docs/ai-guide.md), then:
 
 | Doc | Covers |
 |---|---|
+| [`docs/verified.md`](docs/verified.md) | Rules verified in the running game, with a worked example traced turn by turn |
 | [`docs/singles/move-or-switch.md`](docs/singles/move-or-switch.md) | Singles: how it scores moves, when it switches out, Hardcore's anti-switch rule |
 | [`docs/singles/post-ko-switch-in.md`](docs/singles/post-ko-switch-in.md) | Singles: which Pokemon it sends in after a faint or a switch |
 | [`docs/doubles/moves-and-targets.md`](docs/doubles/moves-and-targets.md) | Doubles: roles, move scoring, target choice, and why it feels random |
@@ -55,9 +56,20 @@ A few highlights:
 | **[CFRU]** | From the CFRU source, with the surrounding Radical Red code matching. | No |
 | **[VERIFIED]** | Tested in game by a person and the game behaves as described. | Yes |
 
-[ROM] and [CFRU] are code findings only. No finding is tagged [VERIFIED] yet.
+[ROM] and [CFRU] are code findings only. [VERIFIED] findings are collected in [`docs/verified.md`](docs/verified.md).
 
 Several CFRU behaviors turned out to be different in Radical Red, for example the hardcoded smart AI for all trainers, the removed item use, the reworked anti-switch counter and changes to Protect, Taunt, Counter, Sucker Punch and hazard scoring.
+
+## Watch the AI live
+
+Scripts for mGBA that stop the game inside the AI's own functions and print what it computed: every move's score, ties, the move chosen, and for switches the reason and the switch-in scores. They read the real decisions; nothing is simulated.
+
+1. Get the **mGBA 0.11 development build** (stable 0.10 has no breakpoint API): https://mgba.io/downloads.html#development-downloads
+2. Put your own Radical Red 4.1 ROM at `roms/rr.gba` (SHA1 above; not included).
+3. Start it with the viewer: `tools/mgba/run_viewer.sh` (macOS, mGBA in `/Applications`), or open the ROM in mGBA and load `tools/mgba/rr_ai_viewer.lua` with Tools > Scripting > File > Load script.
+4. Open Tools > Scripting and the "RR AI scores" tab. A block appears each time an enemy trainer Pokemon decides (wild Pokemon pick random moves and do not show).
+
+To replay one position many times and see how often each decision happens (the AI's randomness is seeded per run), make an mGBA savestate just before a trainer battle and run `tools/mgba/run_repeat_test.sh <state file> 50 random`. Options and the trace mode are in [`tools/README.md`](tools/README.md).
 
 ## Reproduce it
 
@@ -67,7 +79,7 @@ The scripts are in [`tools/`](tools/README.md). You need your own copies of both
 
 - The meaning of game flag `0x10C0`, which blocks AI switching when set.
 - Which bosses use special battle IDs `0x10` / `0x12`, which have small hazard and ability exceptions.
-- No human verification in play yet. All findings come from reading the code.
+- Most findings are still code-only; see [`docs/verified.md`](docs/verified.md) for what has been checked in game.
 
 ## Disclaimer
 
