@@ -10,13 +10,19 @@
 --     20 = x2, 1 = immune.
 --   Roles: RR's 0x090C40C4 singles path (docs/verified.md rule 8).
 --
--- Approximations (v1), each a likely source of mismatches to chase:
---   damage: generic Gen 5+ formula with stats, stages, STAB, type and the 93% roll; no items,
---     abilities, weather, crits, multi-hit counts or RR's own damage code.
---   speed: stats with stages and paralysis only; ties count as "goes second".
---   role: no Choice item / ability / Assault Vest check.
---   status moves other than healing, poison and Stockpile, and stat boosts, are not scored ("?").
---   the AI's prediction of your move, and every switch check except the 25% roll, are not modelled.
+-- Inputs read from RR's own caches when present (opts.cache), so the test is on the scoring
+-- rules, not on damage formulas: AI damage per move gNewBS +0x2F0 (0x090DEAC4), strongest move
+-- gNewBS +0x22E (0x090DFE00; can lag one Pokemon behind after a faint replacement), the AI's
+-- predicted move for you gNewBS +0x1EE (used for turn order, MoveWouldHitFirst 0x090DA062).
+--
+-- Approximations, each a likely source of mismatches to chase:
+--   damage fallback (no cache): generic Gen 5+ formula, multi-hit x3, no items/abilities/weather.
+--   speed: RR's stage table and weather abilities, Tailwind, paralysis; no held items.
+--   role: no Choice item / ability / Assault Vest check, hazards counted even if already set.
+--   "good idea to boost": you have no phazing move, cannot 2HKO it, and it does not KO first.
+--   status moves other than healing, poison, Stockpile and stat boosts are not scored ("?").
+--   switch checks: only the 25% roll.
+-- Measured on the rr.ss6 battle (16 enemy move decisions): every move score matched.
 
 local S = require("rr_state")
 local M = {}
@@ -27,13 +33,22 @@ M.KO_ROLL = 93 -- percent; the AI's assumed damage roll for KO checks (from docs
 
 local function s8(v) return v >= 128 and v - 256 or v end
 
-function M.move(mem, id)
+function M.move(mem, id, mon)
 	local a = M.MOVES + id * M.MOVE_SIZE
-	return {
+	local mv = {
 		id = id, effect = mem:read8(a), power = mem:read8(a + 1), type = mem:read8(a + 2),
 		accuracy = mem:read8(a + 3), chance = mem:read8(a + 5), priority = s8(mem:read8(a + 7)),
 		split = mem:read8(a + 10), name = S.move_name(mem, id),
 	}
+	-- Hidden Power (0xED): type from the IVs' low bits, x15/63, +1, +2 past Steel (0x090830A8).
+	if id == 0xED and mon then
+		local bits = 0
+		for k = 1, 6 do bits = bits | ((mon.ivs[k] & 1) << (k - 1)) end
+		local t = bits * 15 // 63 + 1
+		if t > 8 then t = t + 1 end
+		mv.type = t
+	end
+	return mv
 end
 
 -- Type effectiveness of a move type against a battle mon (x0, x0.25 ... x4).
@@ -53,9 +68,23 @@ end
 local STAGE = { [0] = { 2, 8 }, { 2, 7 }, { 2, 6 }, { 2, 5 }, { 2, 4 }, { 2, 3 }, { 2, 2 }, { 3, 2 }, { 4, 2 }, { 5, 2 }, { 6, 2 }, { 7, 2 }, { 8, 2 } }
 local function staged(value, stage) local r = STAGE[stage + 6] or STAGE[6]; return value * r[1] // r[2] end
 
-function M.speed(mon)
-	local v = staged(mon.speed, mon.stages.spe - 6)
-	if mon.status1 & 0x40 ~= 0 then v = v // 2 end -- paralysis
+-- Speed as RR's SpeedCalc 0x0906F284 computes it, partly: stage ratio table 0x09124898 (num, den
+-- per stage), weather abilities 0x0906E320 (Sand Rush 0x7C in sandstorm 0x18, Swift Swim 0x21 in
+-- rain 0x1007, Chlorophyll 0x22 in sun 0x860, Slush Rush 0xAB in hail 0x180: x2), Tailwind
+-- (gNewBS +0x13 +side: x2), paralysis /2 unless Quick Feet 0x70 (x2 when statused).
+-- Not modelled: held items (0x0906E2B4), Cloud Nine, Utility Umbrella, Unburden-type, 0x09075480.
+M.STAGE_TABLE = 0x09124898
+M.WEATHER = 0x02023F1C
+function M.speed(mem, mon)
+	local st = mon.stages.spe
+	local v = mon.speed * mem:read8(M.STAGE_TABLE + st * 2) // mem:read8(M.STAGE_TABLE + st * 2 + 1)
+	local w = mem:read16(M.WEATHER)
+	local ab = mon.ability
+	if (ab == 0x7C and w & 0x18 ~= 0) or (ab == 0x21 and w & 0x1007 ~= 0) or
+		(ab == 0x22 and w & 0x860 ~= 0) or (ab == 0xAB and w & 0x180 ~= 0) then v = v * 2 end
+	if mem:read8(mem:read32(M.GNEWBS) + 0x13 + (mon.battler & 1)) ~= 0 then v = v * 2 end
+	if mon.status1 & 0xFF ~= 0 and ab == 0x70 then v = v * 2
+	elseif mon.status1 & 0x40 ~= 0 then v = v // 2 end
 	return v
 end
 
@@ -72,6 +101,7 @@ function M.damage(mem, atk, def, mv, roll)
 	local base = ((2 * atk.level) // 5 + 2) * mv.power * a // d // 50 + 2
 	if mv.type == atk.type1 or mv.type == atk.type2 or mv.type == atk.type3 then base = base * 3 // 2 end
 	base = math.floor(base * M.effectiveness(mem, mv.type, def))
+	if mv.effect == 0x1D then base = base * 3 end -- multi-hit (2-5 hits): 3 assumed, not checked in RR code
 	return base * roll // 100
 end
 
@@ -137,9 +167,40 @@ local function status_bonus(role, boost, foe_can_2hko)
 	return 0
 end
 
+-- Stat-boost bonus by role (0x090C5D0C, table 0x090C5E0E), "good idea to boost" (0x090C3C64)
+-- approximated as: you have no Roar/Whirlwind/Haze-type move (the 50% main-Random skip and the
+-- other conditions are not modelled). Returns nil when no bonus.
+local STAT_BOOST = { [1] = 5, [2] = 5, [3] = 5, [5] = 4, [7] = 4, [8] = 3, [9] = 5, [10] = 3 }
+local function stat_boost(role, foe_phazes, foe_can_2hko, ai_ko_first)
+	if foe_phazes or foe_can_2hko or ai_ko_first then return nil end
+	return STAT_BOOST[role]
+end
+
+-- RR's AI damage cache (0x090DEAC4): u32 at gNewBS + 0x2F0 + ((atk*4 + def)*4 + slot)*4,
+-- 0xFFFFFFFF = not computed yet. Predicted moves: u16 at gNewBS + 0x1EE + (bank*4 + target)*2
+-- (read by MoveWouldHitFirst 0x090DA0D2).
+M.GNEWBS = 0x0203E038
+function M.cached_damage(mem, atk_b, def_b, slot)
+	local v = mem:read32(mem:read32(M.GNEWBS) + 0x2F0 + ((atk_b * 4 + def_b) * 4 + slot) * 4)
+	if v == 0xFFFFFFFF then return nil end
+	return v
+end
+-- Strongest-move cache (IsStrongestMove 0x090DFE00): u16 move ID at gNewBS + 0x22E + (atk*4 + def)*2.
+function M.cached_strongest(mem, atk_b, def_b)
+	local v = mem:read16(mem:read32(M.GNEWBS) + 0x22E + (atk_b * 4 + def_b) * 2)
+	if v == 0xFFFF then return nil end
+	return v
+end
+function M.predicted_move(mem, bank, target)
+	local v = mem:read16(mem:read32(M.GNEWBS) + 0x1EE + (bank * 4 + target) * 2)
+	if v == 0xFFFF then return 0 end
+	return v
+end
+
 -- Predict one AI battler's move scores against one target.
 -- Returns { role, moves = { [slot] = { name, score, alt (score with coin), notes, unknown } }, odds }
-function M.predict(mem, ai_b, target_b)
+function M.predict(mem, ai_b, target_b, opts)
+	local cached = 0
 	local ai, foe = S.read_battle_mon(mem, ai_b), S.read_battle_mon(mem, target_b)
 	local role = M.role(mem, ai)
 	local mvs, dmg = {}, {}
@@ -147,23 +208,44 @@ function M.predict(mem, ai_b, target_b)
 	local has_protect = false
 	for i = 0, 3 do
 		if ai.moves[i] ~= 0 then
-			mvs[i] = M.move(mem, ai.moves[i])
+			mvs[i] = M.move(mem, ai.moves[i], ai)
 			if mvs[i].effect == 0x6F then has_protect = true end
-			dmg[i] = M.damage(mem, ai, foe, mvs[i], M.KO_ROLL)
+			dmg[i] = (opts and opts.cache and M.cached_damage(mem, ai_b, target_b, i)) or M.damage(mem, ai, foe, mvs[i], M.KO_ROLL)
+			if opts and opts.cache and M.cached_damage(mem, ai_b, target_b, i) then cached = cached + 1 end
 			if dmg[i] > best_dmg then best_dmg, strongest = dmg[i], i end
 		end
 	end
 	-- Can the foe 2HKO the AI (its best move, approximation)?
-	local foe_best = 0
+	local foe_best, foe_phazes = 0, false
 	for i = 0, 3 do
 		if foe.moves[i] ~= 0 then
-			local d = M.damage(mem, foe, ai, M.move(mem, foe.moves[i]), M.KO_ROLL)
+			local fm = M.move(mem, foe.moves[i], foe)
+			if fm.effect == 0x1C or fm.effect == 0x19 or fm.effect == 0xDE then foe_phazes = true end
+			local d = (opts and opts.cache and M.cached_damage(mem, target_b, ai_b, i)) or M.damage(mem, foe, ai, fm, M.KO_ROLL)
 			if d > foe_best then foe_best = d end
 		end
 	end
 	local foe_can_2hko = foe_best * 2 >= ai.hp
-	local ai_first_base = M.speed(ai) > M.speed(foe)
+	-- Goes first: priority, then Speed, against the AI's predicted move for you (MoveWouldHitFirst
+	-- 0x090DA0D2 uses that prediction); Speed ties count as going second.
+	local foe_pred = M.predicted_move(mem, target_b, ai_b)
+	local foe_prio = foe_pred ~= 0 and M.move(mem, foe_pred).priority or 0
+	local ai_first_base = M.speed(mem, ai) > M.speed(mem, foe)
+	-- The KO bonuses go only to the most accurate KO move(s) (0x090E11FC).
+	local best_ko_acc = -1
+	for i, mv in pairs(mvs) do
+		if mv.split ~= 2 and dmg[i] >= foe.hp then
+			local acc = mv.accuracy == 0 and 101 or mv.accuracy
+			if acc > best_ko_acc then best_ko_acc = acc end
+		end
+	end
 	local ai_can_ko = best_dmg >= foe.hp
+	-- RR's strongest-move cache is what the AI uses (it can lag one Pokemon behind after a faint
+	-- replacement, seen in game); fall back to the model's own pick when it is empty.
+	if opts and opts.cache then
+		local cs = M.cached_strongest(mem, ai_b, target_b)
+		if cs then for i, mv in pairs(mvs) do if mv.id == cs then strongest = i end end end
+	end
 	local hp_pct = ai.max_hp > 0 and (ai.hp * 100 // ai.max_hp) or 0
 
 	local out = { role = role, moves = {} }
@@ -175,10 +257,16 @@ function M.predict(mem, ai_b, target_b)
 			if eff == 0 then
 				add(-15, "no effect")
 			else
-				local goes_first = mv.priority > 0 or (mv.priority == 0 and ai_first_base)
-				if dmg[i] >= foe.hp and goes_first then add(9, "KO, goes first")
-				elseif dmg[i] >= foe.hp and not has_protect then add(SLOW_KO[role] or 0, "KO, goes second (role)")
+				local goes_first = mv.priority > foe_prio or (mv.priority == foe_prio and ai_first_base)
+				local acc = mv.accuracy == 0 and 101 or mv.accuracy
+				local ko = dmg[i] >= foe.hp and acc == best_ko_acc
+				if ko and goes_first then add(9, "KO, goes first")
+				elseif ko and not has_protect then add(SLOW_KO[role] or 0, "KO, goes second (role)")
 				elseif i == strongest then add(2, "strongest move") end
+				if BOOST[mv.effect] then
+					local b = stat_boost(role, foe_phazes, foe_can_2hko, ai_can_ko and ai_first_base)
+					if b then add(b, "stat-boosting attack, bonus by role") else r.notes[#r.notes + 1] = "boost not a good idea" end
+				end
 				if mv.effect == 0x46 and mv.chance >= 50 and not ai_first_base and not ai_can_ko then
 					r.alt = r.score + 3
 					r.notes[#r.notes + 1] = "+3 on a 50% coin (Speed drop)"
@@ -193,8 +281,10 @@ function M.predict(mem, ai_b, target_b)
 			elseif e == 0x21 or e == 0x42 then -- Toxic / poison
 				if foe.status1 == 0 and eff ~= 0 then add(status_bonus(role, 1, foe_can_2hko), "poison, status bonus by role (boost 1)")
 				else r.unknown = true end
-			elseif e == 0xA0 then
-				add(status_bonus(role, 1, foe_can_2hko), "Stockpile, status bonus by role (boost 1; full stacks not modelled)")
+			elseif e == 0xA0 or BOOST[e] then
+				local b = stat_boost(role, foe_phazes, foe_can_2hko, ai_can_ko and ai_first_base)
+				if b then add(b, "stat boost, bonus by role (max stacks not modelled)")
+				else r.notes[#r.notes + 1] = "boost not a good idea" end
 			else
 				r.unknown = true
 				r.notes[#r.notes + 1] = "status move not modelled"
@@ -220,6 +310,10 @@ function M.predict(mem, ai_b, target_b)
 	end
 	out.odds = odds
 	out.foe_can_2hko, out.ai_first, out.ai_can_ko = foe_can_2hko, ai_first_base, ai_can_ko
+	out.cached = cached
+	out.strongest_model = strongest and mvs[strongest].id or 0
+	out.strongest_cache = M.cached_strongest(mem, ai_b, target_b) or 0
+	out.foe_pred, out.foe_prio = foe_pred, foe_prio
 	return out
 end
 

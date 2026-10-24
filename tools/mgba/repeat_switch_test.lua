@@ -14,6 +14,9 @@
 -- with the move the AI is scoring (AI struct +2 moveConsidered).
 -- RR_TEST_DECISIONS=N records N enemy decisions (turns) per run. When your active Pokemon faints,
 -- the script alternates RIGHT and A to send out the next party slot.
+-- Each move decision is also predicted by rr_model.lua from the battle state alone (at the
+-- move-choice entry 0x090C82C0) and compared with the AI's real scores: 'model:' lists
+-- predicted (score or score/with-coin) vs actual per move, '=' when they match.
 -- Prints '== done' at the end; the caller closes mGBA.
 --
 -- Addresses (RR 4.1, see rr_ai_viewer.lua for the evidence):
@@ -24,6 +27,7 @@
 local here = debug.getinfo(1, "S").source:match("^@(.*/)") or "./"
 package.path = here .. "?.lua;" .. package.path
 local S = require("rr_state")
+local Model = require("rr_model")
 
 local STATE = os.getenv("RR_TEST_STATE")
 local RUNS = tonumber(os.getenv("RR_TEST_RUNS") or "30")
@@ -121,12 +125,43 @@ local function on_scores()
 		if id ~= 0 then t[#t + 1] = string.format("%s %d", S.move_name(emu, id), S.signed8(emu:read8(ai + 4 + i))) end
 	end
 	rec.scores = table.concat(t, ", ")
+	if rec.pred then
+		local c, match, total = {}, 0, 0
+		for i = 0, 3 do
+			local r = rec.pred.moves[i]
+			if r then
+				local actual = S.signed8(emu:read8(ai + 4 + i))
+				local ok = actual == r.score or actual == r.alt
+				total = total + 1
+				if ok then match = match + 1 end
+				c[#c + 1] = string.format("%s %s%s%d%s", r.name, r.alt and (r.score .. "/" .. r.alt) or tostring(r.score),
+					ok and "=" or "!=", actual, r.unknown and "?" or "")
+			end
+		end
+		rec.model = string.format("model %d/%d scores [%s] role %s cached-dmg %d your-predicted %s (prio %d) ai-first %s strongest model %s cache %s", match, total, table.concat(c, ", "),
+			Model.ROLE_NAMES[rec.pred.role] or tostring(rec.pred.role), rec.pred.cached or 0, S.move_name(emu, rec.pred.foe_pred), rec.pred.foe_prio, tostring(rec.pred.ai_first), S.move_name(emu, rec.pred.strongest_model), S.move_name(emu, rec.pred.strongest_cache))
+		rec.scores = rec.scores .. " | " .. rec.model
+	end
+end
+local function on_choice_entry()
+	if phase ~= "run" or rec.decided then return end
+	local b = emu:read8(0x02023BC4)
+	local ok, p = pcall(Model.predict, emu, b, b ~ 1, { cache = os.getenv("RR_TEST_MODEL_CACHE") ~= "0" })
+	rec.pred = ok and p or nil
+	if not ok then rec.model_error = tostring(p) end
 end
 local function on_move_exit()
 	if phase ~= "run" or rec.decided or not rec.stayed then return end
 	rec.move = emu:readRegister("r0") & 0xFF
 	local b = emu:read8(0x02023D6B)
 	if rec.move < 4 then rec.move_name = S.move_name(emu, emu:read16(S.BATTLE_MONS + b * S.BATTLE_MON_SIZE + 0x0C + rec.move * 2)) end
+	if rec.pred and rec.move < 4 then
+		rec.scores = (rec.scores or "") .. string.format(" | model gave the chosen move %d%%",
+			math.floor((rec.pred.odds[rec.move] or 0) * 100 + 0.5))
+	elseif rec.model_error then
+		rec.scores = (rec.scores or "") .. " | model error: " .. rec.model_error
+	end
+	rec.pred, rec.model_error = nil, nil
 	rec.decided = true
 	finish()
 end
@@ -147,6 +182,7 @@ for spec in (os.getenv("RR_TEST_TRACE") or ""):gmatch("[^,]+") do
 	end, tonumber(addr, 16))
 end
 emu:setBreakpoint(on_scores, 0x090C83AC)
+emu:setBreakpoint(on_choice_entry, 0x090C82C0)
 for _, c in ipairs(CHECKS) do
 	emu:setBreakpoint(function()
 		if phase == "run" and rec.checks and not rec.decided then
