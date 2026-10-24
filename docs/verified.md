@@ -66,9 +66,47 @@ Side-effect bonuses such as rule 6's Speed drop come on top.
 - **Evidence:** traced score changes over several turns: a move that KOs while the AI moves second got +8 (role 3), and once your new Pokemon resisted it, that move got nothing and the AI's strongest other move got +2.
 - **Not yet verified:** the +9 for a KO that goes first, and the other roles' slow-KO amounts.
 
+## 8. Roles: what they are, how they are set, what they change [VERIFIED]
+
+Every turn the AI gives each Pokemon on the field a role (CFRU calls it a "fighting style"), worked out from that Pokemon's current 4 moves (and its ability and item). The role does not look at the battle situation: the same Pokemon with the same moves gets the same role all battle.
+
+**How the role is set (singles)**, first match wins:
+
+| Moveset | Role |
+|---|---|
+| Baton Pass (with a teammate to pass to) | Baton Pass support |
+| Haze or Clear Smog | phazing support |
+| Wish or Heal Bell | cleric |
+| trapping move or Mean Look | stall |
+| Choice item or ability, or Assault Vest | pure attacker |
+| 2+ screens (Reflect, Light Screen; Aurora Veil counts as 2) | screens sweeper (2+ attacks) or screens support |
+| entry hazards still worth setting | phazing support (if it also has Roar/Whirlwind) or hazard setter |
+| 3+ attacks | setup stats sweeper (with a boosting move), setup status sweeper (with a status or phazing move), else pure attacker |
+| Leech Seed and Protect | stall |
+| 2 attacks plus a boosting, status or phazing move | setup stats sweeper (boosting) or setup status sweeper |
+| anything else | stall |
+
+**What the role changes:** only the *size* of some bonuses. Whether a bonus applies at all is decided by the situation (can it KO, does it go first, its HP, whether the move is useful now). Role-dependent bonuses:
+
+- status moves (Toxic, Stockpile, ...): setup status sweeper 4 + boost, stall and cleric 3 + boost, screens 2 + boost, pure attacker 0 (`IncreaseStatusViability` `0x090C5C90`);
+- stat-boosting moves (Power-Up Punch, ...): by role (called from `0x090C5F26`);
+- a KO that goes second (rule 7): setup status sweeper +8, setup stats sweeper +6 or +8, other roles 3 to 9 (`0x090C69F4`).
+
+So the role decides close calls between a status or setup move and an attack. Example: when it cannot KO, a setup status sweeper's Stockpile (105) beats its strongest attack (102), while a pure attacker's Stockpile would stay at 100 and it would attack.
+
+- **Code:** role computed by `0x090C4618` (CFRU `PredictBankFightingStyle`/`PredictFightingStyle`, singles part `0x090C40C4`), cached per battler at `gNewBS+0x888` by `GetBankFightingStyle` `0x090C46DC`, recomputed each turn. [ROM]
+- **Evidence:** a full traced battle: 2 attacks plus status moves (Hippopotas: Bulldoze, Rock Tomb, Toxic, Slack Off; Lileep: Stockpile, Recover, Hidden Power, Mega Drain) gave setup status sweeper; 3 attacks plus Power-Up Punch (Cacnea) gave setup stats sweeper; 4 attacks (Lunatone) gave pure attacker. The role was recomputed every turn and never changed for the same Pokemon. The slow-KO bonus was +8 for the setup status sweeper and +6 for the setup stats sweeper.
+
+## 9. A move that would have no effect gets -15 [VERIFIED]
+
+If the AI's type check says the move would miss outright, have no effect or fail against you (for example an Electric move into a Ground type, a Psychic move into a Dark type), the move gets -15.
+
+- **Code:** Negatives `0x090CB2E0`-`0x090CB2F8`: type check `0x090838A4`, result `& 0x29` (missed, no effect, failed) gives -15. [ROM]
+- **Evidence:** in a traced battle, ThunderPunch against a Ground-type and Psybeam against a Dark-type each got -15 on every turn they were scored.
+
 ## Worked example: Hippopotas against your Psyduck
 
-How rules 2 to 7 combine in one real position (test state `rr.ss6`, start of the battle). Every number below was traced in the game with `RR_TEST_TRACE`: the AI's score helpers (`0x090E1380` adds, `0x090E1394` subtracts), who called them, and the branch that led there. Your Psyduck (Water Pulse, Confusion, Tail Whip, Water Gun) faces the enemy's Hippopotas (Bulldoze, Rock Tomb, Toxic, Slack Off). The enemy's bench: Cacnea, Lunatone, Lileep, Archen, Varoom.
+How rules 2 to 9 combine in one real position (test state `rr.ss6`, start of the battle). Every number below was traced in the game with `RR_TEST_TRACE`: the AI's score helpers (`0x090E1380` adds, `0x090E1394` subtracts), who called them, and the branch that led there. Your Psyduck (Water Pulse, Confusion, Tail Whip, Water Gun) faces the enemy's Hippopotas (Bulldoze, Rock Tomb, Toxic, Slack Off). The enemy's bench: Cacnea, Lunatone, Lileep, Archen, Varoom.
 
 **Step 1: the 25% roll (rule 2).** 1 turn in 4, the AI skips switching and goes to step 3.
 
