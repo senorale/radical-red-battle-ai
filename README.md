@@ -69,6 +69,8 @@ Scripts for mGBA that stop the game inside the AI's own functions and print what
 3. Start it with the viewer: `tools/mgba/run_viewer.sh` (macOS, mGBA in `/Applications`), or open the ROM in mGBA and load `tools/mgba/rr_ai_viewer.lua` with Tools > Scripting > File > Load script.
 4. Open Tools > Scripting and the "RR AI scores" tab. A block appears each time an enemy trainer Pokemon decides (wild Pokemon pick random moves and do not show).
 
+In single battles the viewer also shows a PREDICT block from `tools/mgba/rr_model.lua` above the real scores, and a MODEL line saying how many scores it got right; every decision is logged to `tools/mgba/logs/decisions.jsonl`.
+
 To replay one position many times and see how often each decision happens (the AI's randomness is seeded per run), make an mGBA savestate just before a trainer battle and run `tools/mgba/run_repeat_test.sh <state file> 50 random`. Options and the trace mode are in [`tools/README.md`](tools/README.md).
 
 ## Reproduce it

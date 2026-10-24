@@ -78,7 +78,7 @@ Each of these produced wrong decompiles before it was fixed; they explain why ol
 
 ## Next steps
 
-1. **Predictor** (HANDOFF steps 2-5): break at the move-choice entry, compute our predicted scores and switch decision from the rules in `docs/verified.md`, print PREDICT before the viewer's ACTUAL, log both as JSON lines. Needs a damage model for the KO / 2HKO / strongest-move rules.
+1. **Predictor v1 is built** (`tools/mgba/rr_model.lua`, 2026-10-24): move scores in singles, printed as PREDICT before ACTUAL in the viewer, logged to `tools/mgba/logs/decisions.jsonl`. On the `rr.ss6` battle (16 decisions) every move score matched. Next: test on new battles; model the switch checks (only the 25% roll so far), more status moves, the good-idea-to-boost check exactly, doubles. It reads RR's damage, strongest-move and predicted-move caches as inputs; the strongest-move cache can lag one Pokemon behind after a faint replacement (seen in game).
 2. Open questions from the traces: where RR resets the role cache each turn (not `ClearCachedAIData` `0x090C8BA4`, whose only caller is the Hardcore re-pick `0x090C8F04`); why Stockpile got no +5 against Mightyena; why Hidden Power lost its +2 against a 3 HP target; whether the main `Random` advances every frame.
 3. Doc audit: move the remaining [ROM]/[CFRU] claims in `docs/` onto RR addresses.
 4. Later: route encounters are data tables, not code.

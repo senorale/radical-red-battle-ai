@@ -38,6 +38,14 @@ local BATTLE_MONS, MON_SIZE = 0x02023BE4, 0x58
 local MOVE_NAMES, MOVE_NAME_LEN = 0x090F3188, 13
 local SPECIES_NAMES, SPECIES_NAME_LEN = 0x094042CC, 11
 
+-- Predictor (rr_model.lua, same folder): runs at the move-choice entry from the battle state alone
+-- and is printed above the real scores. Singles only for now.
+local SCRIPT_DIR = debug.getinfo(1, "S").source:match("^@(.*/)") or "./"
+package.path = SCRIPT_DIR .. "?.lua;" .. package.path
+local model_ok, Model = pcall(require, "rr_model")
+local SITE_CHOICE_ENTRY = 0x090C82C0
+local predictions = {} -- per AI battler
+local LOG_DIR -- set in the diagnostics section below; decisions.jsonl goes here
 local SITE_SINGLES = 0x090C83AC
 local SITE_DOUBLES = 0x090C875C
 local SITE_EXIT = 0x090C837A
@@ -87,6 +95,43 @@ local function redraw()
 	for _, block in ipairs(history) do buffer:print(block .. "\n") end
 end
 
+local function on_choice_entry()
+	if not model_ok or (emu:read32(0x02022B4C) & 1) ~= 0 then return end -- singles only
+	local b = emu:read8(0x02023BC4)
+	local ok, p = pcall(Model.predict, emu, b, b ~ 1, { cache = true })
+	predictions[b] = ok and p or { error = tostring(p) }
+end
+
+local function json_escape(v) return (tostring(v):gsub('[%c"\\]', function(c) return string.format("\\u%04x", c:byte()) end)) end
+local function log_decision(battler, runs, choice, pred)
+	if not LOG_DIR then return end
+	local parts = { string.format('"frame":%d,"ai":"%s","battler":%d,"choice":%d', emu:currentFrame(),
+		json_escape(species_name(battler)), battler, choice) }
+	local s = runs[1]
+	if s then
+		local mv, sc = {}, {}
+		for i = 0, 3 do
+			mv[#mv + 1] = '"' .. json_escape(move_name(s.moves[i])) .. '"'
+			sc[#sc + 1] = tostring(s.scores[i])
+		end
+		parts[#parts + 1] = string.format('"target":"%s","moves":[%s],"actual":[%s]', json_escape(species_name(s.target)),
+			table.concat(mv, ","), table.concat(sc, ","))
+	end
+	if pred and pred.moves then
+		local ps, po = {}, {}
+		for i = 0, 3 do
+			local r = pred.moves[i]
+			ps[#ps + 1] = r and (r.alt and string.format('[%d,%d]', r.score, r.alt) or tostring(r.score)) or "null"
+			po[#po + 1] = string.format("%.3f", pred.odds[i] or 0)
+		end
+		parts[#parts + 1] = string.format('"role":%d,"predicted":[%s],"odds":[%s]', pred.role, table.concat(ps, ","), table.concat(po, ","))
+	end
+	pcall(function()
+		local f = io.open(LOG_DIR .. "decisions.jsonl", "a")
+		if f then f:write("{", table.concat(parts, ","), "}\n"); f:close() end
+	end)
+end
+
 local function on_exit()
 	local battler = emu:read8(AI_BATTLER)
 	local runs = pending[battler]
@@ -95,6 +140,14 @@ local function on_exit()
 	local choice = emu:readRegister("r0") & 0xFF
 	local final_target = emu:read8(AI_TARGET)
 	local lines = { string.format("frame %d  %s (%s)", emu:currentFrame(), species_name(battler), POSITION[battler] or battler) }
+	local pred = predictions[battler]
+	predictions[battler] = nil
+	if pred and pred.moves then
+		for _, l in ipairs(Model.format(pred)) do lines[#lines + 1] = l end
+		lines[#lines + 1] = "  ACTUAL"
+	elseif pred and pred.error then
+		lines[#lines + 1] = "  PREDICT error: " .. pred.error
+	end
 	for _, s in ipairs(runs) do
 		local best = -999
 		for i = 0, 3 do if s.moves[i] ~= 0 and s.scores[i] > best then best = s.scores[i] end end
@@ -112,12 +165,26 @@ local function on_exit()
 		end
 	end
 	if choice == 4 then lines[#lines + 1] = "  => flee" elseif choice == 5 then lines[#lines + 1] = "  => watch" end
+	if pred and pred.moves and runs[1] then
+		local match, total = 0, 0
+		for i = 0, 3 do
+			local r = pred.moves[i]
+			if r then
+				total = total + 1
+				if runs[1].scores[i] == r.score or runs[1].scores[i] == r.alt then match = match + 1 end
+			end
+		end
+		lines[#lines + 1] = string.format("  MODEL: %d/%d scores right, gave the chosen move %d%%", match, total,
+			math.floor(((choice < 4 and pred.odds[choice]) or 0) * 100 + 0.5))
+	end
+	log_decision(battler, runs, choice, pred)
 	table.insert(history, table.concat(lines, "\n"))
 	while #history > MAX_HISTORY do table.remove(history, 1) end
 	redraw()
 end
 
 local log -- set in the diagnostics section below
+
 local ACTIVE_BATTLER = 0x02023BC4
 local GBATTLE_STRUCT = 0x02023FE8
 local GNEWBS = 0x0203E038
@@ -306,7 +373,7 @@ local LOG_PATH
 do
 	local src = debug.getinfo(1, "S").source
 	local dir = src:sub(1, 1) == "@" and src:sub(2):match("(.*/)") or nil
-	if dir and not RR_VIEWER_NO_LOG then LOG_PATH = dir .. "logs/viewer.log" end
+	if dir and not RR_VIEWER_NO_LOG then LOG_PATH = dir .. "logs/viewer.log"; LOG_DIR = dir .. "logs/" end
 end
 log = function(msg)
 	local line = string.format("[rr-ai] %s", msg)
@@ -334,6 +401,7 @@ end
 
 local SITES = {
 	{ "singles", snapshot, SITE_SINGLES }, { "doubles", snapshot, SITE_DOUBLES }, { "exit", on_exit, SITE_EXIT },
+	{ "choice_entry", on_choice_entry, SITE_CHOICE_ENTRY, quiet = true },
 	{ "preset", on_preset, SITE_PRESET }, { "switch", on_switch, SITE_SWITCH }, { "ko_switch", on_ko_switch, SITE_KO_SWITCH },
 	{ "choose_pokemon", on_choose_pokemon, SITE_CHOOSE_POKEMON }, { "ko_picked", on_ko_picked, SITE_KO_PICKED, quiet = true }, { "scorer", on_scorer, SITE_SCORER, quiet = true },
 	{ "should_switch", on_should_switch, SITE_SHOULD_SWITCH, quiet = true },
