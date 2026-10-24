@@ -54,7 +54,7 @@ In single battles, an attacking move whose side effect lowers your Speed (Bulldo
 
 ## Worked example: Hippopotas against your Psyduck
 
-How rules 2 to 6 combine in one real position (test state `rr.ss6`, start of the battle). Your Psyduck (Water Pulse, Confusion, Tail Whip, Water Gun) faces the enemy's Hippopotas (Bulldoze, Rock Tomb, Toxic, Slack Off). The enemy's bench: Cacnea, Lunatone, Lileep, Archen, Varoom.
+How rules 2 to 6 combine in one real position (test state `rr.ss6`, start of the battle). Every number below was traced in the game with `RR_TEST_TRACE`: the AI's score helpers (`0x090E1380` adds, `0x090E1394` subtracts), who called them, and the branch that led there. Your Psyduck (Water Pulse, Confusion, Tail Whip, Water Gun) faces the enemy's Hippopotas (Bulldoze, Rock Tomb, Toxic, Slack Off). The enemy's bench: Cacnea, Lunatone, Lileep, Archen, Varoom.
 
 **Step 1: the 25% roll (rule 2).** 1 turn in 4, the AI skips switching and goes to step 3.
 
@@ -63,7 +63,7 @@ How rules 2 to 6 combine in one real position (test state `rr.ss6`, start of the
 | Order | Party member | Switch-in score | Absorbs Water? |
 |---|---|---|---|
 | 1st | Cacnea (best score: resists all your moves, outspeeds) | 31 | no, rejected |
-| 2nd | Lileep (second best: resists all your moves) | 17 | yes, accepted by the ability check (Lileep's Water-absorbing ability is Storm Drain; not confirmed on screen), **switches in** |
+| 2nd | Lileep (second best: resists all your moves) | 17 | yes, Storm Drain, **switches in** |
 
 The scores do not decide here; the first Pokemon (in that order) that absorbs Water wins. This step had no further randomness: every run that passed the 25% roll switched to Lileep.
 
@@ -71,10 +71,10 @@ The scores do not decide here; the first Pokemon (in that order) that absorbs Wa
 
 | Move | Score | Why |
 |---|---|---|
-| Toxic | 105 | +5, always (reason not traced yet) |
-| Bulldoze | 102 or **105** | +2 (likely the strongest-move bonus, not traced yet), then +3 on a coin flip because it lowers your Speed (rule 6) |
+| Toxic | 105 | +5: Toxic's base boost is +1 ("AI enjoys poisoning", CFRU's default when poisoning is not a bad idea), and status moves get extra points by the AI's battle role. Hippopotas plays the "setup status sweeper" role, which gets 4 + boost = 5 (`IncreaseStatusViability` `0x090C5C90`, called from `0x090D246A`; role 3, boost 1, traced) |
+| Bulldoze | 102 or **105** | +2: it is Hippopotas's strongest move against Psyduck (`IsStrongestMove` `0x090DFE00`); the strongest move gets +2, or a role-based 4 to 8 when it KOs in one hit and nothing else changed its score (Bulldoze does not KO). Then +3 on a coin flip because it lowers your Speed (rule 6) |
 | Rock Tomb | 100 or 103 | +3 on its own coin flip (rule 6) |
-| Slack Off | 90 | -10 (reason not traced yet; Hippopotas was at full HP) |
+| Slack Off | 90 | -10: healing moves are penalized by the AI's own HP: at 100% -10, at 90-99% -9, at 89% or less no penalty from this rule (Negatives `0x090CB0E8`-`0x090CB110`, HP% = HP x 100 / max HP rounded down, `0x090DD734`). Hippopotas was at full HP |
 
 **Step 4: ties (rule 5).** If Bulldoze lost its coin flip (102), Toxic is the only best move and is used. If Bulldoze won it (105), it ties Toxic and a 50/50 pick decides.
 

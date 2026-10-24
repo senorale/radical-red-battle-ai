@@ -118,8 +118,8 @@ for spec in (os.getenv("RR_TEST_TRACE") or ""):gmatch("[^,]+") do
 		if phase ~= "run" or rec.decided then return end
 		local ai = emu:read32(emu:read32(0x02023FF4) + 0x14)
 		rec.trace = rec.trace or {}
-		rec.trace[#rec.trace + 1] = string.format("%s %s=%d (%s)", addr, reg, emu:readRegister(reg),
-			S.move_name(emu, emu:read16(ai + 2)))
+		local v = emu:readRegister(reg)
+		rec.trace[#rec.trace + 1] = string.format("%s %s=%s (%s, script %d)", addr, reg, (reg == "r14" or reg == "lr") and string.format("%08X", v) or tostring(v), S.move_name(emu, emu:read16(ai + 2)), emu:read8(ai + 0x11))
 	end, tonumber(addr, 16))
 end
 emu:setBreakpoint(on_scores, 0x090C83AC)
