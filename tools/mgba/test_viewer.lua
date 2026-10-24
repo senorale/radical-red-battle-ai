@@ -40,4 +40,16 @@ score(0, { 112, 100, 100, 92 }); bps[0x090C875C]()
 score(2, { 100, 115, 100, 92 }); bps[0x090C875C]()
 w8(0x02023D6C, 2); regs.r0 = 1; bps[0x090C837A]()
 
+-- Fake switch: foe left (battler 1, party slot 0) switches to slot 2 picked by the scorer, then a
+-- post-KO replacement picks slot 1. Party: Charizard, Blastoise #9, Raichu #26.
+local nbs, enemy = 0x02032000, 0x0202402C
+w32(0x02023FE8, 0x02033000); w32(0x0203E038, nbs)
+w8(0x02023BC4, 1); w16(0x02023BCE + 2, 0)
+for i, sp in ipairs({ 6, 9, 26 }) do w16(enemy + (i - 1) * 100 + 0x20, sp); w16(enemy + (i - 1) * 100 + 0x56, 50 + i) end
+local scores, flags = { 0, -1, 33 }, { 0, 0x80, 0x41 }
+for i = 1, 3 do w16(nbs + 0x860 + 0xC + (i - 1) * 2, scores[i] & 0xFFFF); w8(nbs + 0x878 + 6 + (i - 1), flags[i]) end
+regs.r3 = 6; bps[0x090C80DE]()
+regs.r2 = 2; bps[0x090C8246]()
+regs.r4 = 1; bps[0x09068B20]()
+
 print(table.concat(out))

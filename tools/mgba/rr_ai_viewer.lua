@@ -19,7 +19,17 @@
 --   0x02023BE4  gBattleMons, 0x58 bytes per battler: +0 species (u16), +0xC moves (4 x u16).
 --   0x090F3188  move names, 13 bytes each; 0x094042CC species names, 11 bytes each.
 --
--- Not covered: the switch decision (ShouldSwitch) and post-KO replacement choice.
+-- Switching (trainer battles):
+--   0x090C80DE  in AI_TrySwitchOrUseItem 0x090C802C after ShouldSwitch 0x090D824C said yes:
+--               r3 = AI_monToSwitchIntoId[side] (gBattleStruct +0x92 +side); 6 = none picked yet,
+--               so GetMostSuitableMonToSwitchInto's core 0x090D8168 picks.
+--   0x090C8246  voluntary switch committed: strb r2 -> gBattleStruct +0x5C +battler (r2 = party slot).
+--   0x09068B20  post-KO replacement in OpponentHandleChoosePokemon 0x09068A28: strb r4, r4 = party slot.
+--   0x02023FE8  gBattleStruct pointer; 0x02023BC4 gActiveBattler; 0x0203E038 gNewBS pointer.
+--   gNewBS +0x860 +side*0xC: s16 score per party slot, +0x878 +side*6: flag byte per slot. RR copies
+--   both there at the end of the switch-in scorer 0x090D7168 (memcpy at 0x090D7C48 and 0x090D7C6A;
+--   CFRU keeps them local). They come from the scorer's latest run for that side. Flag bits are
+--   CFRU's SWITCHING_FLAG_* (include/new/ai_switching.h), not yet checked bit by bit in RR.
 
 local GBATTLE_RESOURCES = 0x02023FF4
 local AI_BATTLER = 0x02023D6B
@@ -107,12 +117,78 @@ local function on_exit()
 	redraw()
 end
 
+local ACTIVE_BATTLER = 0x02023BC4
+local GBATTLE_STRUCT = 0x02023FE8
+local GNEWBS = 0x0203E038
+local ENEMY_PARTY, PLAYER_PARTY = 0x0202402C, 0x02024284
+local SITE_PRESET = 0x090C80DE
+local SITE_SWITCH = 0x090C8246
+local SITE_KO_SWITCH = 0x09068B20
+local FLAG_NAMES = { [0x01] = "KO foe", [0x02] = "resists all", [0x04] = "revenge kill", [0x08] = "walls",
+	[0x10] = "2HKO", [0x20] = "removes hazards", [0x40] = "outspeeds", [0x80] = "faints to foe" }
+
+local preset = {} -- per battler: AI_monToSwitchIntoId[side] seen before the pick (6 = none)
+
+local function signed16(v) return v >= 0x8000 and v - 0x10000 or v end
+
+local function flags_text(f)
+	local t = {}
+	for _, bit in ipairs({ 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 }) do
+		if f & bit ~= 0 then t[#t + 1] = FLAG_NAMES[bit] end
+	end
+	return table.concat(t, ", ")
+end
+
+local function party_species(side, slot)
+	local base = side == 1 and ENEMY_PARTY or PLAYER_PARTY
+	local id = emu:read16(base + slot * 100 + 0x20)
+	return id, name_at(SPECIES_NAMES + id * SPECIES_NAME_LEN, SPECIES_NAME_LEN)
+end
+
+local function report_switch(battler, slot, kind)
+	local side = battler & 1
+	local nbs = emu:read32(GNEWBS)
+	local base = side == 1 and ENEMY_PARTY or PLAYER_PARTY
+	local _, to_name = party_species(side, slot)
+	local lines = { string.format("frame %d  %s (%s) %s -> slot %d %s", emu:currentFrame(), species_name(battler),
+		POSITION[battler] or battler, kind, slot, to_name) }
+	if kind == "SWITCHES" then
+		local p = preset[battler]
+		lines[#lines + 1] = (p ~= nil and p ~= 6) and string.format("  target slot was set inside ShouldSwitch (%d)", p)
+			or "  target slot picked by best-switch-in scorer"
+	end
+	lines[#lines + 1] = "  switch-in scores (latest scorer run for this side):"
+	for i = 0, 5 do
+		local id, name = party_species(side, i)
+		if id ~= 0 then
+			local hp = emu:read16(base + i * 100 + 0x56)
+			local score = signed16(emu:read16(nbs + 0x860 + side * 0xC + i * 2))
+			local f = emu:read8(nbs + 0x878 + side * 6 + i)
+			local mark = (i == slot) and "  <= CHOSEN" or ""
+			if emu:read16(0x02023BCE + battler * 2) == i then mark = "  (on field)" end
+			lines[#lines + 1] = string.format("    %d %-11s hp %3d  score %4d  flags 0x%02X %s%s", i, name, hp, score, f,
+				flags_text(f), mark)
+		end
+	end
+	preset[battler] = nil
+	table.insert(history, table.concat(lines, "\n"))
+	while #history > MAX_HISTORY do table.remove(history, 1) end
+	redraw()
+end
+
+local function on_preset() preset[emu:read8(ACTIVE_BATTLER)] = emu:readRegister("r3") & 0xFF end
+local function on_switch() report_switch(emu:read8(ACTIVE_BATTLER), emu:readRegister("r2") & 0xFF, "SWITCHES") end
+local function on_ko_switch() report_switch(emu:read8(ACTIVE_BATTLER), emu:readRegister("r4") & 0xFF, "replacement after faint") end
+
 local installed = false
 local function install()
 	if installed or not emu then return end
 	emu:setBreakpoint(snapshot, SITE_SINGLES)
 	emu:setBreakpoint(snapshot, SITE_DOUBLES)
 	emu:setBreakpoint(on_exit, SITE_EXIT)
+	emu:setBreakpoint(on_preset, SITE_PRESET)
+	emu:setBreakpoint(on_switch, SITE_SWITCH)
+	emu:setBreakpoint(on_ko_switch, SITE_KO_SWITCH)
 	installed = true
 	buffer:clear()
 	buffer:print("RR AI viewer ready. Scores appear when the enemy picks a move.\n")
