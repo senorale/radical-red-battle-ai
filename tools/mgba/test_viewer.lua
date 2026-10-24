@@ -24,6 +24,7 @@ local out = {}
 console = { createBuffer = function() return { clear = function() out = {} end, print = function(_, s) out[#out + 1] = s end } end }
 callbacks = { add = function() end }
 
+RR_VIEWER_NO_LOG = true -- keep the live log clean
 dofile(viewer)
 
 -- Fake doubles turn: foe left (battler 1, Charizard #6) scores its moves vs your left (0, Venusaur #3)
@@ -48,8 +49,14 @@ w8(0x02023BC4, 1); w16(0x02023BCE + 2, 0)
 for i, sp in ipairs({ 6, 9, 26 }) do w16(enemy + (i - 1) * 100 + 0x20, sp); w16(enemy + (i - 1) * 100 + 0x56, 50 + i) end
 local scores, flags = { 0, -1, 33 }, { 0, 0x80, 0x41 }
 for i = 1, 3 do w16(nbs + 0x860 + 0xC + (i - 1) * 2, scores[i] & 0xFFFF); w8(nbs + 0x878 + 6 + (i - 1), flags[i]) end
+-- Voluntary switch, then its ChoosePokemon follow-through (must not print twice).
+w16(mons + 1 * 0x58 + 0x28, 30)
 regs.r3 = 6; bps[0x090C80DE]()
 regs.r2 = 2; bps[0x090C8246]()
+regs.r4 = 2; bps[0x09068B20]()
+-- Forced out with HP left (U-turn-like), then a faint replacement.
+regs.r4 = 2; bps[0x09068B20]()
+w16(mons + 1 * 0x58 + 0x28, 0)
 regs.r4 = 1; bps[0x09068B20]()
 
 print(table.concat(out))

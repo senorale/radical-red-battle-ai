@@ -177,8 +177,24 @@ local function report_switch(battler, slot, kind)
 end
 
 local function on_preset() preset[emu:read8(ACTIVE_BATTLER)] = emu:readRegister("r3") & 0xFF end
-local function on_switch() report_switch(emu:read8(ACTIVE_BATTLER), emu:readRegister("r2") & 0xFF, "SWITCHES") end
-local function on_ko_switch() report_switch(emu:read8(ACTIVE_BATTLER), emu:readRegister("r4") & 0xFF, "replacement after faint") end
+-- OpponentHandleChoosePokemon also runs to carry out a voluntary switch (it reads the slot the AI
+-- already stored), so it is only reported when the Pokemon fainted or no voluntary switch preceded it
+-- (forced out by a move or item, for example U-turn or Eject Button).
+local switched = {} -- per battler: voluntary switch already reported, waiting for its ChoosePokemon
+local function on_switch()
+	local battler = emu:read8(ACTIVE_BATTLER)
+	switched[battler] = true
+	report_switch(battler, emu:readRegister("r2") & 0xFF, "SWITCHES")
+end
+local function on_ko_switch()
+	local battler = emu:read8(ACTIVE_BATTLER)
+	local fainted = emu:read16(BATTLE_MONS + battler * MON_SIZE + 0x28) == 0
+	local voluntary = switched[battler]
+	switched[battler] = nil
+	if voluntary and not fainted then return end
+	report_switch(battler, emu:readRegister("r4") & 0xFF,
+		fainted and "replacement after faint" or "sent out (forced switch: move or item)")
+end
 
 -- Diagnostics: every hook hit and error goes to the mGBA log and to logs/viewer.log next to
 -- this script (git-ignored), so a session without output can be debugged afterwards.
@@ -186,7 +202,7 @@ local LOG_PATH
 do
 	local src = debug.getinfo(1, "S").source
 	local dir = src:sub(1, 1) == "@" and src:sub(2):match("(.*/)") or nil
-	if dir then LOG_PATH = dir .. "logs/viewer.log" end
+	if dir and not RR_VIEWER_NO_LOG then LOG_PATH = dir .. "logs/viewer.log" end
 end
 local function log(msg)
 	local line = string.format("[rr-ai] %s", msg)
@@ -229,7 +245,7 @@ local function install(why)
 		breakpoint_ids[#breakpoint_ids + 1] = id
 		parts[#parts + 1] = string.format("%s@%08X=%s", site[1], site[3], tostring(id))
 	end
-	pending, preset = {}, {}
+	pending, preset, switched = {}, {}, {}
 	log("install(" .. tostring(why) .. "): " .. table.concat(parts, " "))
 	buffer:clear()
 	buffer:print("RR AI viewer ready. Scores appear when the enemy picks a move.\n")
