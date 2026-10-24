@@ -51,3 +51,37 @@ In single battles, an attacking move whose side effect lowers your Speed (Bulldo
 - **Code:** Positives, assembly `0x090D29D0`-`0x090D2A6A`: after the conditions, `Random2() % 2` (`0x090D2A4C`-`0x090D2A5C`); on 0, `+3` via `0x090E1380` at `0x090D2A62`. [ROM]
 - **Evidence:** replays where the AI stayed in with two Speed-lowering attacks, logging the coin at `0x090D2A5A` (`RR_TEST_TRACE=090D2A5A:r0 tools/mgba/run_repeat_test.sh ...`): in 26 of 26 move scorings, coin 0 gave +3 and coin 1 gave nothing (Bulldoze 105 or 102, Rock Tomb 103 or 100).
 - **Side note:** the AI's prediction pass runs the same scoring first, so it uses up `Random2` rolls before the real choice.
+
+## Worked example: Hippopotas against your Psyduck
+
+How rules 2 to 6 combine in one real position (test state `rr.ss6`, start of the battle). Your Psyduck (Water Pulse, Confusion, Tail Whip, Water Gun) faces the enemy's Hippopotas (Bulldoze, Rock Tomb, Toxic, Slack Off). The enemy's bench: Cacnea, Lunatone, Lileep, Archen, Varoom.
+
+**Step 1: the 25% roll (rule 2).** 1 turn in 4, the AI skips switching and goes to step 3.
+
+**Step 2: why it wants to switch (rule 4).** The AI predicts your Psyduck will use Water Pulse (traced: move `352` passed to the absorb helper). Hippopotas is Ground, weak to Water, and a party member can absorb Water. The absorb check tries the switch-in scorer's best Pokemon first, then the second best:
+
+| Order | Party member | Switch-in score | Absorbs Water? |
+|---|---|---|---|
+| 1st | Cacnea (best score: resists all your moves, outspeeds) | 31 | no, rejected |
+| 2nd | Lileep (second best: resists all your moves) | 17 | yes (Storm Drain), **switches in** |
+
+The scores do not decide here; the first Pokemon (in that order) that absorbs Water wins. This step had no further randomness: every run that passed the 25% roll switched to Lileep.
+
+**Step 3: if it stays, the move scores.** Every move starts at 100.
+
+| Move | Score | Why |
+|---|---|---|
+| Toxic | 105 | +5, always (reason not traced yet) |
+| Bulldoze | 102 or **105** | +2 (likely the strongest-move bonus, not traced yet), then +3 on a coin flip because it lowers your Speed (rule 6) |
+| Rock Tomb | 100 or 103 | +3 on its own coin flip (rule 6) |
+| Slack Off | 90 | -10 (reason not traced yet; Hippopotas was at full HP) |
+
+**Step 4: ties (rule 5).** If Bulldoze lost its coin flip (102), Toxic is the only best move and is used. If Bulldoze won it (105), it ties Toxic and a 50/50 pick decides.
+
+**Resulting odds** (computed from the rules, compared with the replays):
+
+| Outcome | Odds from the rules | 100 replays | 50 replays |
+|---|---|---|---|
+| Switch to Lileep | 75% | 77 | 37 |
+| Stay, Toxic | 25% x (50% + 50% x 50%) = 18.75% | 17 | 10 |
+| Stay, Bulldoze | 25% x 50% x 50% = 6.25% | 6 | 3 |
