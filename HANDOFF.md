@@ -27,9 +27,9 @@ Earlier in the project the user also mentioned possibly changing game data later
 
 ### Emulator and files
 
-- mGBA 0.11.0 development build installed at `~/Applications/mGBA.app` (needed: stable 0.10 has no breakpoint API).
+- mGBA 0.11.0 development build installed at `/Applications/mGBA.app` (needed: stable 0.10 has no breakpoint API).
 - `roms/rr.gba`: Radical Red 4.1 (SHA1 `964f951a0fdaf209e4ea1344883ef0d557bb3a80`, CRC32 `FBA55DD8`).
-- `roms/rr.sav`: the user's in-game save. `roms/rr.ss3`: their mGBA savestate from 2026-10-23 17:54 (slot 3, F3 loads it). Both match this ROM.
+- `roms/rr.sav`: the user's in-game save. `roms/rr.ss1`-`rr.ss3`: their mGBA savestates (F1-F3 load them). All match this ROM. `rr.ss2` is in a wild single battle (Tepig Lv6 vs Poochyena Lv4); its EWRAM is extracted to `roms/states/ss2.ewram` for offline tests.
 - `roms/openemu/*.state`: two OpenEmu states from 2023-08-05, extracted to raw mGBA states. **They belong to a different ROM** (CRC32 `4A8B3B82`, MD5 `13b578459a321635fc5cfe77abb25cb7`), so they cannot be used with 4.1. `tools/mgba/state_info.py <state> <rom>` shows this.
 - `roms/rr.sav.unused-2026-10-23`: an empty save from a first launch; safe to delete.
 - Launch: `tools/mgba/run_viewer.sh` (starts mGBA with the ROM and `--script tools/mgba/rr_ai_viewer.lua`).
@@ -57,16 +57,16 @@ Verified in RR's code this session unless marked otherwise:
 | `gBattleResources` | `0x02023FF4` | `[+0x14]` = AI struct: `+0` aiState (0 setup, 1 scoring, 2 done), `+1` movesetIndex, `+2` moveConsidered (u16), `+4` score[4] (s8), `+0xC` aiFlags (u32), `+0x10` aiAction, `+0x11` aiLogicId. From `BattleAI_DoAIProcessing` `0x090C6F3C`. |
 | AI battler | `0x02023D6B` | battler being scored (u8) |
 | AI target | `0x02023D6C` | `gBankTarget` (u8) |
-| `gBattleMons` | `0x02023BE4` | 0x58 bytes per battler: `+0` species (u16), `+0xC` moves (4 x u16). Other fields follow vanilla FireRed's `struct BattlePokemon`; not individually checked. |
+| `gBattleMons` | `0x02023BE4` | 0x58 bytes per battler, CFRU `struct BattlePokemon`: `+0x18` is type3 (not an HP stage), stages Atk..Eva at `+0x19`..`+0x1F`. Checked on real data (`rr.ss2`) and the type reads at `0x0906CB64`. Full layout in `tools/mgba/rr_state.lua`. |
 | Move names | `0x090F3188` | 13 bytes each (Gen 3 charset). 32 pointers reference it; vanilla table unused. |
 | Species names | `0x094042CC` | 11 bytes each. 41 pointers reference it. |
 | `gBattleMoves` | `0x091521D0` | 12 bytes per move. Seen in code: `+0` effect, `+10` split (2 = status). Other fields assumed vanilla-like (power, type, accuracy, pp, secondary chance, target, priority, flags); **check before relying on them**. |
-| `gPlayerParty` / `gEnemyParty` | `0x02024284` / `0x0202402C` | From `symbols.txt` (FireRed linker names), **not re-checked in RR code**. 100-byte Gen 3 structs, substructures encrypted with personality XOR OT ID, order by personality % 24. `gPlayerPartyCount` listed at `0x02024028` (vanilla FireRed is `0x02024029`; check). |
+| `gPlayerParty` / `gEnemyParty` | `0x02024284` / `0x0202402C` | Checked on real data (`rr.ss2`). 100-byte structs, **unencrypted, fixed order G A E M, checksum 0**: `EncryptBoxMon` `0x0803F8F8` eor nopped, `GetSubstruct` order forced to 0 at `0x0803F94C`, `GetBoxMonData` decrypt nopped `0x0803FD94`-`0x0803FDA6`. `gPlayerPartyCount` is `0x02024029` on real data (`0x02024028` from `symbols.txt` is wrong). |
 | Doubles damage ladder | `0x093504B0` | `gDoublesDamageViabilityMapping[class-11][score]`, recorded earlier as byte-identical to CFRU; not re-checked this session. |
 
 Battlers: 0 = player left, 1 = foe left, 2 = player right, 3 = foe right.
 
-mGBA savestates (`.ss*`) are PNG files with the state in a custom chunk; the raw GBA state is 0x61000 bytes, version magic `0x01000007`, ROM CRC32 at `+0x08`. Parsing that chunk (and the EWRAM offset inside the state) is not implemented yet.
+mGBA savestates (`.ss*`) are PNG files with the zlib-compressed raw state in chunk `gbAs`: 0x61000 bytes, ROM CRC32 at `+0x08`, EWRAM at `+0x21000` (`tools/mgba/extract_state.py`). The user's states have version magic `0x0100000B`.
 
 ### Other tools worth knowing
 
@@ -76,7 +76,7 @@ mGBA savestates (`.ss*`) are PNG files with the state in a custom chunk; the raw
 
 ## What to build next
 
-1. **Battle-state reader in the mGBA script:** both sides' active Pokemon from `gBattleMons` (species, HP, stats, stat stages, ability, item, types, status, moves), plus both full parties from `gPlayerParty`/`gEnemyParty` (decrypt the Gen 3 substructures). Confirm every offset in RR's code first.
+1. **Done (2026-10-23): `tools/mgba/rr_state.lua`**, tested on `rr.ss2` by `tools/mgba/test_state.lua`. Missing: item and ability names, party abilities (need the base stats table), bit meanings of weather/side statuses/status1/status2. Original task: both sides' active Pokemon from `gBattleMons` (species, HP, stats, stat stages, ability, item, types, status, moves), plus both full parties from `gPlayerParty`/`gEnemyParty` (decrypt the Gen 3 substructures). Confirm every offset in RR's code first.
 2. **Prediction hook:** break at the entry of `0x090C82C0` (or just before the scoring loop) and print "PREDICT": the model's score per move per target and the predicted move/target, using only data the script read.
 3. **Model** (start simple, refine): base 100 per move; damage estimate at the 93% roll (the AI's KO assumption per `docs/ai-guide.md`); KO bonuses, strongest-move bonus and immunity penalties for singles from `docs/singles/move-or-switch.md`; for doubles the role rules (`PredictFightingStyle` `0x090C40C4`, including RR's exactly-3 Setup Attacker check at `0x090C4574`), the per-target damage score and the ladder table at `0x093504B0`, per `docs/doubles/moves-and-targets.md`. Mark moves the model does not understand (most status moves at first) as low confidence instead of guessing.
 4. **Then the existing viewer's "ACTUAL"** output: real scores and the chosen move/target, right after the prediction.

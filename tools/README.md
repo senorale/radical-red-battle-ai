@@ -27,8 +27,12 @@ Generated output goes to `tools/ghidra/build/`, which is git-ignored because it 
 | Script | Usage | What it does |
 |---|---|---|
 | `rr_ai_viewer.lua` | mGBA 0.11+ development build, Tools > Scripting > Load script | Breaks inside RR's move-choice function and prints each enemy decision: every move's final score against every target considered, ties, and the move and target chosen. Addresses and evidence are in the script header. |
-| `run_viewer.sh` | `tools/mgba/run_viewer.sh [rom]` | Starts `~/Applications/mGBA.app` (0.11+) with the ROM and the viewer loaded (`--script`). |
+| `run_viewer.sh` | `tools/mgba/run_viewer.sh [rom]` | Starts `/Applications/mGBA.app` (0.11+) with the ROM and the viewer loaded (`--script`). |
 | `test_viewer.lua` | `lua tools/mgba/test_viewer.lua roms/rr.gba tools/mgba/rr_ai_viewer.lua` | Offline test: fakes mGBA, reads names from the real ROM, fires the breakpoints with a made-up doubles decision. |
+| `rr_state.lua` | `require("rr_state")` from the other scripts | Battle-state reader: `gBattleMons` (CFRU layout), both parties (RR stores them unencrypted), battle type, weather, side statuses. Evidence in the header. |
+| `test_state.lua` | `lua tools/mgba/test_state.lua roms/rr.gba roms/states/ss2.ewram` | Offline test: runs `rr_state.lua` on EWRAM from a real savestate and prints the battle. |
+| `extract_state.py` | `python3 -I tools/mgba/extract_state.py roms/rr.ss2 roms/states/ss2.raw roms/states/ss2.ewram` | Pulls the raw GBA state out of an mGBA `.ss*` (PNG chunk `gbAs`) and dumps EWRAM (raw offset `0x21000`). |
+| `dump_battle.py`, `dump_party.py`, `peek.py` | `python3 -I tools/mgba/<script> roms/states/ss2.ewram ...` | Raw views of `gBattleMons`, the parties, or any EWRAM range, for checking layouts. |
 
 Stable mGBA (0.10) has no breakpoint API, so the viewer needs a development build from https://mgba.io/downloads.html#development-downloads.
 
