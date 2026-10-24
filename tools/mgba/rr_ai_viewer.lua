@@ -117,6 +117,7 @@ local function on_exit()
 	redraw()
 end
 
+local log -- set in the diagnostics section below
 local ACTIVE_BATTLER = 0x02023BC4
 local GBATTLE_STRUCT = 0x02023FE8
 local GNEWBS = 0x0203E038
@@ -124,10 +125,39 @@ local ENEMY_PARTY, PLAYER_PARTY = 0x0202402C, 0x02024284
 local SITE_PRESET = 0x090C80DE
 local SITE_SWITCH = 0x090C8246
 local SITE_KO_SWITCH = 0x09068B20
+local SITE_CHOOSE_POKEMON = 0x09068A28 -- OpponentHandleChoosePokemon entry
+local SITE_SCORER = 0x090D7168        -- switch-in scorer entry
+local SITE_SHOULD_SWITCH = 0x090D824C  -- ShouldSwitch entry
+local SITE_SHOULD_SWITCH_RET = 0x090D8264 -- every return passes here: mov r0,r4 (r4 = result)
 local FLAG_NAMES = { [0x01] = "KO foe", [0x02] = "resists all", [0x04] = "revenge kill", [0x08] = "walls",
 	[0x10] = "2HKO", [0x20] = "removes hazards", [0x40] = "outspeeds", [0x80] = "faints to foe" }
 
-local preset = {} -- per battler: AI_monToSwitchIntoId[side] seen before the pick (6 = none)
+-- ShouldSwitch 0x090D824C inlines CFRU's checks in CFRU's order. Each address below is the first
+-- instruction of one check's block; the last block entered before a TRUE return is the reason.
+-- Names follow CFRU ShouldSwitch (src/Battle_AI/ai_switching.c), matched by structure in the
+-- decompile (abilities, globals and helper calls each block uses); RR moved several helpers to
+-- its own code at 0x0935xxxx.
+local SWITCH_CHECKS = {
+	{ 0x090D831C, "absorb: a party member absorbs the foe's predicted move (Volt/Water Absorb, Flash Fire, ...)" },
+	{ 0x090D8664, "pass Wish: Wish is about to heal, send in a Pokemon that needs it" },
+	{ 0x090D8676, "stop locked move: foe is locked into a move a party member handles" },
+	{ 0x090D8696, "Perish Song count is about to KO it" },
+	{ 0x090D86A2, "Wonder Guard check (RR code 0x09350AC6)" },
+	{ 0x090D86B2, "only bad moves left" },
+	{ 0x090D8ABE, "Natural Cure / Regenerator: switch to heal" },
+	{ 0x090D8AEC, "foe is semi-invulnerable (Fly, Dig, ...)" },
+	{ 0x090D8F24, "Yawn: about to fall asleep" },
+	{ 0x090D90AC, "asleep" },
+	{ 0x090D9146, "taking annoying secondary damage (Leech Seed, Curse, toxic, ...)" },
+	{ 0x090D9158, "avoid death: foe outspeeds and KOs, a party member survives" },
+	{ 0x090D9182, "offensive stats too low" },
+	{ 0x090D98B2, "save sweeper for later" },
+}
+
+local preset = {}        -- per battler: AI_monToSwitchIntoId[side] after ShouldSwitch said yes (6 = none)
+local check_now = nil    -- name of the ShouldSwitch block being run
+local switch_reason = {} -- per battler: reason from the last TRUE ShouldSwitch
+local ko_ctx = {}        -- per battler: state while OpponentHandleChoosePokemon runs
 
 local function signed16(v) return v >= 0x8000 and v - 0x10000 or v end
 
@@ -145,55 +175,118 @@ local function party_species(side, slot)
 	return id, name_at(SPECIES_NAMES + id * SPECIES_NAME_LEN, SPECIES_NAME_LEN)
 end
 
-local function report_switch(battler, slot, kind)
+-- Why this slot: compares it with the scorer's best and second best for the battler
+-- (gNewBS +0x840/+0x841 +battler*2, written by the scorer 0x090D7168; GetMostSuitableMonToSwitchInto's
+-- core 0x090D8168 returns the best unless a partner already took it, then the second best).
+local function pick_reason(battler, slot, scores, preset_slot)
+	local nbs = emu:read32(GNEWBS)
+	local best, second = emu:read8(nbs + 0x840 + battler * 2), emu:read8(nbs + 0x841 + battler * 2)
+	local lines = {}
+	if preset_slot ~= nil and preset_slot ~= 6 then
+		lines[#lines + 1] = string.format("  pick: slot %d was set by the decision itself (AI_monToSwitchIntoId), not by best score", preset_slot)
+	elseif slot == best then
+		lines[#lines + 1] = "  pick: best switch-in score"
+	elseif slot == second then
+		lines[#lines + 1] = string.format("  pick: second best (best, slot %d, already reserved by partner or a pending switch)", best)
+	else
+		lines[#lines + 1] = "  pick: no scored option; first healthy party slot (fallback)"
+	end
+	local ties = {}
+	for i = 0, 5 do
+		if i ~= slot and scores[i] ~= nil and scores[i] == scores[slot] then ties[#ties + 1] = tostring(i) end
+	end
+	if #ties > 0 and slot == best then
+		lines[#lines + 1] = string.format("  tie with slot %s: scorer walks the party in order and a later equal score wins a 50%% Random2 flip (0x090D7168)",
+			table.concat(ties, ", "))
+	end
+	return lines
+end
+
+local function report_switch(battler, slot, kind, extra)
 	local side = battler & 1
 	local nbs = emu:read32(GNEWBS)
 	local base = side == 1 and ENEMY_PARTY or PLAYER_PARTY
 	local _, to_name = party_species(side, slot)
 	local lines = { string.format("frame %d  %s (%s) %s -> slot %d %s", emu:currentFrame(), species_name(battler),
 		POSITION[battler] or battler, kind, slot, to_name) }
-	if kind == "SWITCHES" then
-		local p = preset[battler]
-		lines[#lines + 1] = (p ~= nil and p ~= 6) and string.format("  target slot was set inside ShouldSwitch (%d)", p)
-			or "  target slot picked by best-switch-in scorer"
-	end
-	lines[#lines + 1] = "  switch-in scores (latest scorer run for this side):"
+	for _, l in ipairs(extra) do lines[#lines + 1] = l end
+	local scores, rows = {}, {}
 	for i = 0, 5 do
 		local id, name = party_species(side, i)
 		if id ~= 0 then
 			local hp = emu:read16(base + i * 100 + 0x56)
-			local score = signed16(emu:read16(nbs + 0x860 + side * 0xC + i * 2))
+			scores[i] = signed16(emu:read16(nbs + 0x860 + side * 0xC + i * 2))
 			local f = emu:read8(nbs + 0x878 + side * 6 + i)
 			local mark = (i == slot) and "  <= CHOSEN" or ""
 			if emu:read16(0x02023BCE + battler * 2) == i then mark = "  (on field)" end
-			lines[#lines + 1] = string.format("    %d %-11s hp %3d  score %4d  flags 0x%02X %s%s", i, name, hp, score, f,
+			rows[#rows + 1] = string.format("    %d %-11s hp %3d  score %4d  flags 0x%02X %s%s", i, name, hp, scores[i], f,
 				flags_text(f), mark)
 		end
 	end
-	preset[battler] = nil
+	return lines, scores, rows
+end
+
+local function emit(lines, rows)
+	lines[#lines + 1] = "  switch-in scores (latest scorer run for this side):"
+	for _, r in ipairs(rows) do lines[#lines + 1] = r end
 	table.insert(history, table.concat(lines, "\n"))
 	while #history > MAX_HISTORY do table.remove(history, 1) end
 	redraw()
 end
 
+local function on_should_switch() check_now = "pre-checks" end
+for _, c in ipairs(SWITCH_CHECKS) do c[3] = function() check_now = c[2] end end
+local function on_should_switch_ret()
+	if emu:readRegister("r4") ~= 0 then
+		switch_reason[emu:read8(ACTIVE_BATTLER)] = check_now
+		log("ShouldSwitch TRUE: " .. tostring(check_now))
+	end
+	check_now = nil
+end
 local function on_preset() preset[emu:read8(ACTIVE_BATTLER)] = emu:readRegister("r3") & 0xFF end
+
 -- OpponentHandleChoosePokemon also runs to carry out a voluntary switch (it reads the slot the AI
 -- already stored), so it is only reported when the Pokemon fainted or no voluntary switch preceded it
 -- (forced out by a move or item, for example U-turn or Eject Button).
 local switched = {} -- per battler: voluntary switch already reported, waiting for its ChoosePokemon
 local function on_switch()
 	local battler = emu:read8(ACTIVE_BATTLER)
+	local slot = emu:readRegister("r2") & 0xFF
 	switched[battler] = true
-	report_switch(battler, emu:readRegister("r2") & 0xFF, "SWITCHES")
+	local reason = switch_reason[battler] or "unknown (ShouldSwitch block not seen)"
+	local lines, scores, rows = report_switch(battler, slot, "SWITCHES", { "  reason: " .. reason })
+	for _, l in ipairs(pick_reason(battler, slot, scores, preset[battler])) do lines[#lines + 1] = l end
+	switch_reason[battler], preset[battler] = nil, nil
+	emit(lines, rows)
+end
+
+local function on_choose_pokemon()
+	local battler = emu:read8(ACTIVE_BATTLER)
+	local gbs = emu:read32(GBATTLE_STRUCT)
+	ko_ctx[battler] = { preset = emu:read8(gbs + 0x92 + (battler & 1)), rescored = false }
+end
+local function on_scorer()
+	local ctx = ko_ctx[emu:read8(ACTIVE_BATTLER)]
+	if ctx then ctx.rescored = true end
 end
 local function on_ko_switch()
 	local battler = emu:read8(ACTIVE_BATTLER)
+	local slot = emu:readRegister("r4") & 0xFF
+	local ctx = ko_ctx[battler] or {}
+	ko_ctx[battler] = nil
 	local fainted = emu:read16(BATTLE_MONS + battler * MON_SIZE + 0x28) == 0
 	local voluntary = switched[battler]
 	switched[battler] = nil
 	if voluntary and not fainted then return end
-	report_switch(battler, emu:readRegister("r4") & 0xFF,
-		fainted and "replacement after faint" or "sent out (forced switch: move or item)")
+	local extra = { fainted and "  reason: its Pokemon fainted" or "  reason: forced out by a move or item (U-turn, Volt Switch, Eject Button, ...)" }
+	if ctx.preset ~= nil and ctx.preset == 6 then
+		extra[#extra + 1] = ctx.rescored and "  scorer re-ran now (cached best was missing or fainted)"
+			or "  used the scorer's cached result from earlier this turn"
+	end
+	local lines, scores, rows = report_switch(battler, slot,
+		fainted and "replacement after faint" or "sent out (forced switch)", extra)
+	for _, l in ipairs(pick_reason(battler, slot, scores, ctx.preset)) do lines[#lines + 1] = l end
+	emit(lines, rows)
 end
 
 -- Diagnostics: every hook hit and error goes to the mGBA log and to logs/viewer.log next to
@@ -204,7 +297,7 @@ do
 	local dir = src:sub(1, 1) == "@" and src:sub(2):match("(.*/)") or nil
 	if dir and not RR_VIEWER_NO_LOG then LOG_PATH = dir .. "logs/viewer.log" end
 end
-local function log(msg)
+log = function(msg)
 	local line = string.format("[rr-ai] %s", msg)
 	pcall(function() console:log(line) end)
 	if LOG_PATH then
@@ -215,11 +308,11 @@ local function log(msg)
 	end
 end
 
-local function guard(name, fn)
+local function guard(name, fn, quiet)
 	return function()
 		local frame = -1
 		pcall(function() frame = emu:currentFrame() end)
-		log(string.format("hit %s frame %d", name, frame))
+		if not quiet then log(string.format("hit %s frame %d", name, frame)) end
 		local ok, err = pcall(fn)
 		if not ok then
 			log(string.format("ERROR in %s: %s", name, tostring(err)))
@@ -231,7 +324,11 @@ end
 local SITES = {
 	{ "singles", snapshot, SITE_SINGLES }, { "doubles", snapshot, SITE_DOUBLES }, { "exit", on_exit, SITE_EXIT },
 	{ "preset", on_preset, SITE_PRESET }, { "switch", on_switch, SITE_SWITCH }, { "ko_switch", on_ko_switch, SITE_KO_SWITCH },
+	{ "choose_pokemon", on_choose_pokemon, SITE_CHOOSE_POKEMON }, { "scorer", on_scorer, SITE_SCORER, quiet = true },
+	{ "should_switch", on_should_switch, SITE_SHOULD_SWITCH, quiet = true },
+	{ "should_switch_ret", on_should_switch_ret, SITE_SHOULD_SWITCH_RET, quiet = true },
 }
+for _, c in ipairs(SWITCH_CHECKS) do SITES[#SITES + 1] = { string.format("check_%08X", c[1]), c[3], c[1], quiet = true } end
 local breakpoint_ids = {}
 
 -- Runs at load and again on every start/reset, since a restarted core may drop breakpoints.
@@ -241,11 +338,11 @@ local function install(why)
 	breakpoint_ids = {}
 	local parts = {}
 	for _, site in ipairs(SITES) do
-		local id = emu:setBreakpoint(guard(site[1], site[2]), site[3])
+		local id = emu:setBreakpoint(guard(site[1], site[2], site.quiet), site[3])
 		breakpoint_ids[#breakpoint_ids + 1] = id
 		parts[#parts + 1] = string.format("%s@%08X=%s", site[1], site[3], tostring(id))
 	end
-	pending, preset, switched = {}, {}, {}
+	pending, preset, switched, switch_reason, ko_ctx, check_now = {}, {}, {}, {}, {}, nil
 	log("install(" .. tostring(why) .. "): " .. table.concat(parts, " "))
 	buffer:clear()
 	buffer:print("RR AI viewer ready. Scores appear when the enemy picks a move.\n")

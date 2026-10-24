@@ -49,14 +49,20 @@ w8(0x02023BC4, 1); w16(0x02023BCE + 2, 0)
 for i, sp in ipairs({ 6, 9, 26 }) do w16(enemy + (i - 1) * 100 + 0x20, sp); w16(enemy + (i - 1) * 100 + 0x56, 50 + i) end
 local scores, flags = { 0, -1, 33 }, { 0, 0x80, 0x41 }
 for i = 1, 3 do w16(nbs + 0x860 + 0xC + (i - 1) * 2, scores[i] & 0xFFFF); w8(nbs + 0x878 + 6 + (i - 1), flags[i]) end
--- Voluntary switch, then its ChoosePokemon follow-through (must not print twice).
+-- Scorer's best/second best for battler 1: slot 2, then slot 1.
+w8(nbs + 0x840 + 2, 2); w8(nbs + 0x841 + 2, 1)
+-- Voluntary switch: ShouldSwitch enters the Yawn block and returns TRUE, scorer picks slot 2,
+-- then the ChoosePokemon follow-through (preset slot 2, must not print twice).
 w16(mons + 1 * 0x58 + 0x28, 30)
+bps[0x090D824C](); bps[0x090D831C](); bps[0x090D8F24](); regs.r4 = 1; bps[0x090D8264]()
 regs.r3 = 6; bps[0x090C80DE]()
 regs.r2 = 2; bps[0x090C8246]()
+w8(0x02033000 + 0x92 + 1, 2); bps[0x09068A28](); w8(0x02033000 + 0x92 + 1, 6)
 regs.r4 = 2; bps[0x09068B20]()
--- Forced out with HP left (U-turn-like), then a faint replacement.
-regs.r4 = 2; bps[0x09068B20]()
+-- Forced out with HP left (U-turn-like) using the cached scorer result.
+bps[0x09068A28](); regs.r4 = 2; bps[0x09068B20]()
+-- Faint replacement, scorer re-runs, picks second best (slot 1).
 w16(mons + 1 * 0x58 + 0x28, 0)
-regs.r4 = 1; bps[0x09068B20]()
+bps[0x09068A28](); bps[0x090D7168](); regs.r4 = 1; bps[0x09068B20]()
 
 print(table.concat(out))
