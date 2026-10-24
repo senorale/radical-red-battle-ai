@@ -12,6 +12,8 @@
 -- rr.ss6), so only a different seed shows the AI's Random2 coin flips.
 -- RR_TEST_TRACE="090D2A5A:r0,..." logs a register at an address each time it runs before the decision,
 -- with the move the AI is scoring (AI struct +2 moveConsidered).
+-- RR_TEST_DECISIONS=N records N enemy decisions (turns) per run. When your active Pokemon faints,
+-- the script alternates RIGHT and A to send out the next party slot.
 -- Prints '== done' at the end; the caller closes mGBA.
 --
 -- Addresses (RR 4.1, see rr_ai_viewer.lua for the evidence):
@@ -27,8 +29,9 @@ local STATE = os.getenv("RR_TEST_STATE")
 local RUNS = tonumber(os.getenv("RR_TEST_RUNS") or "30")
 local OUT = os.getenv("RR_TEST_OUT") or (here .. "logs/repeat.log")
 local STEP = tonumber(os.getenv("RR_TEST_DELAY_STEP") or "7")
-local MAX_FRAMES = tonumber(os.getenv("RR_TEST_MAX_FRAMES") or "6000")
+local MAX_FRAMES = tonumber(os.getenv("RR_TEST_MAX_FRAMES") or "4000")
 local SEED_MODE = os.getenv("RR_TEST_SEED")
+local DECISIONS = tonumber(os.getenv("RR_TEST_DECISIONS") or "1") -- enemy decisions (turns) recorded per run
 math.randomseed(12345)
 local RANDOM2 = 0x020386D0
 local ACTIVE_BATTLER = 0x02023BC4
@@ -58,8 +61,21 @@ local function outcome_key(r)
 	return "TIMEOUT"
 end
 
+local last_frame = 0 -- frame of the previous decision in this run
 local function finish()
 	local key = outcome_key(rec)
+	rec.done = (rec.done or 0) + 1
+	if rec.done < DECISIONS and (rec.switched or rec.move) then
+		rec.history = rec.history or {}
+		rec.history[#rec.history + 1] = string.format("[turn %d: %s%s]", rec.done, key, rec.scores and (" scores: " .. rec.scores) or "")
+		rec.trace = rec.trace or {}
+		rec.trace[#rec.trace + 1] = "| end of turn " .. rec.done
+		rec.decided, rec.stayed, rec.switched, rec.move, rec.move_name, rec.scores, rec.slot, rec.reason = nil
+		rec.checks, rec.check = {}, nil
+		last_frame = frame
+		return
+	end
+	if rec.history then key = table.concat(rec.history, " ") .. " [turn " .. rec.done .. ": " .. key .. "]" end
 	tally[key] = (tally[key] or 0) + 1
 	write(string.format("run %2d delay %4d frames_to_decision %4d random2_at_ShouldSwitch 0x%08X checks_entered [%s] => %s%s%s",
 		run, delay, frame, rec.rand2 or 0, table.concat(rec.checks, ","), key, rec.scores and ("  scores: " .. rec.scores) or "",
@@ -147,6 +163,7 @@ callbacks:add("frame", function()
 		delay = (run - 1) * STEP
 		frame = 0
 		rec = { checks = {} }
+		last_frame = 0
 		assert(emu:loadStateFile(STATE), "could not load " .. tostring(STATE))
 		if SEED_MODE == "random" then emu:write32(RANDOM2, math.random(0, 0xFFFFFFFF)) end
 		phase = "run"
@@ -155,8 +172,13 @@ callbacks:add("frame", function()
 	frame = frame + 1
 	local keys = 0
 	if frame > delay and (frame - delay) % 12 < 3 then keys = 1 << C.GBA_KEY.A end
+	-- Your active Pokemon fainted: alternate RIGHT and A until it is replaced. In the party menu RIGHT
+	-- moves the cursor off the fainted first slot (and does nothing after that), A opens the menu
+	-- and sends the Pokemon out.
+	local fainted = emu:read16(S.BATTLE_MONS + 0x28) == 0 and emu:read8(S.BATTLERS_COUNT) > 0
+	if fainted and frame % 24 >= 12 and frame % 24 < 15 then keys = 1 << C.GBA_KEY.RIGHT end
 	emu:setKeys(keys)
-	if frame > delay + MAX_FRAMES then finish() end
+	if frame > math.max(delay, last_frame) + MAX_FRAMES then rec.done = DECISIONS; finish() end
 end)
 
 write(string.format("== repeat test: state %s, %d runs, delay step %d frames, seed %s", tostring(STATE), RUNS, STEP, tostring(SEED_MODE)))
