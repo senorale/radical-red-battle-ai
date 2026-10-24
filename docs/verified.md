@@ -29,7 +29,7 @@ The AI's coin flips traced so far (the 25% switch skip, switch check rolls, the 
 
 ## 4. Absorb switch: a party member that absorbs your predicted move comes in [VERIFIED]
 
-When the switch checks run (the 75% in rule 2), the first check is whether a party member has an ability that absorbs the move the AI predicts you will use (Volt Absorb, Water Absorb, Storm Drain, Flash Fire, ...). If one does, that Pokemon comes in, regardless of the normal switch-in scores.
+When the switch checks run (the 75% in rule 2), the first check is whether a party member has an ability that absorbs the move the AI predicts you will use (Volt Absorb, Water Absorb, Storm Drain, Flash Fire, ...). If one does, that Pokemon comes in, even when another party member has a better switch-in score. The scores only set the order in which party members are tested (best, second best, then the rest in party order); the first one that absorbs the move wins.
 
 - **Code:** first block of ShouldSwitch (entered at `0x090D831C`). It tries the scorer's best Pokemon, then the second best, then every other party slot in order; the RR helper `0x093508B0` accepts the first with a matching ability. Same idea as CFRU's `FindMonThatAbsorbsOpponentsMove`. [ROM]
 - **Evidence:** against a Pokemon whose attacks were Water moves, the enemy switched to its party member that can have Storm Drain, although another party member had the best switch-in score (31 against 17). The viewer showed the absorb check as the reason and the slot as chosen by that check.
@@ -144,7 +144,7 @@ How rules 2 to 9 combine in one real position (test state `rr.ss6`, start of the
 | 1st | Cacnea (best score: resists all your moves, outspeeds) | 31 | no, rejected |
 | 2nd | Lileep (second best: resists all your moves) | 17 | yes, Storm Drain, **switches in** |
 
-The scores do not decide here; the first Pokemon (in that order) that absorbs Water wins. This step had no further randomness: every run that passed the 25% roll switched to Lileep.
+The scores only set the testing order; the first Pokemon in that order that absorbs Water wins. This step had no further randomness: every run that passed the 25% roll switched to Lileep.
 
 **Step 3: if it stays, the move scores.** Every move starts at 100.
 
