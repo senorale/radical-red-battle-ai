@@ -70,21 +70,24 @@ Side-effect bonuses such as rule 6's Speed drop come on top.
 
 Every turn the AI gives each Pokemon on the field a role (CFRU calls it a "fighting style"), worked out from that Pokemon's current 4 moves (and its ability and item). The role does not look at the battle situation: the same Pokemon with the same moves gets the same role all battle.
 
-**How the role is set (singles)**, first match wins. The table is CFRU's `PredictFightingStyle`; in the game three rows are verified so far (setup status sweeper, setup stats sweeper, pure attacker by 4 attacks), the rest is [CFRU]:
+**How the role is set (singles)**, from Radical Red's role function `0x090C40C4` (singles path). The AI walks its 4 moves; some moves end the check at once, the rest are counted, then the totals decide:
 
-| Moveset | Role |
+| Check | Role |
 |---|---|
-| Baton Pass (with a teammate to pass to) | Baton Pass support |
-| Haze or Clear Smog | phazing support |
-| Wish or Heal Bell | cleric |
-| trapping move or Mean Look | stall |
-| Choice item or ability, or Assault Vest | pure attacker |
-| 2+ screens (Reflect, Light Screen; Aurora Veil counts as 2) | screens sweeper (2+ attacks) or screens support |
-| entry hazards still worth setting | phazing support (if it also has Roar/Whirlwind) or hazard setter |
-| 3+ attacks | setup stats sweeper (with a boosting move), setup status sweeper (with a status or phazing move), else pure attacker |
-| Leech Seed and Protect | stall |
-| 2 attacks plus a boosting, status or phazing move | setup stats sweeper (boosting) or setup status sweeper |
-| anything else | stall |
+| Baton Pass, while it has another usable Pokemon (`0x09074180`) | Baton Pass support (6), immediately |
+| a Haze-type move (effect `0x19`, or `0xDE`) | phazing support (9), immediately |
+| Wish or Heal Bell (effects `0xB3`, `0x66`) | cleric (7), immediately |
+| a trapping move or Mean Look (effects `0x2A`, `0x6A`) | stall (5), immediately |
+| Choice item or ability, or Assault Vest (checked on its other moves, `0x09076730`) | pure attacker (1), immediately |
+| then, after counting all 4 moves: **any** screen move (Reflect or Light Screen effect), or Aurora Veil while Veil is not up | screens support (8) |
+| entry hazards that are not already fully set on your side (Stealth Rock, Sticky Web, Toxic Spikes, Spikes up to 3 layers, read from `gSideTimers`) | phazing support (9) if it also has Roar/Whirlwind, else hazard setter (10) |
+| 3 or 4 attacks | setup stats sweeper (2) with a stat-boosting move (an attack that boosts counts, e.g. Power-Up Punch); else setup status sweeper (3) with any status move; else pure attacker (1) |
+| exactly 2 attacks, not Leech Seed + Protect | setup stats sweeper (2) with a boosting move, setup status sweeper (3) with a status move or Roar |
+| anything else (0 or 1 attack, or Leech Seed + Protect) | stall (5) |
+
+Differences from CFRU: one screen move is enough for screens support, and RR never gives the "screens sweeper" role in singles (CFRU needs two screens and gives screens sweeper with 2+ attacks). [ROM, checked in assembly: screen counter `0x090C418C`-`0x090C4194`, decision `0x090C4272`-`0x090C432C`]
+
+The role is recomputed every turn but only changes mid-battle through battle state, never because you switched: once its hazards are fully set, Aurora Veil is up, or Baton Pass has no one left to pass to, those moves stop counting.
 
 **What the role changes:** only the *size* of some bonuses. Whether a bonus applies at all is decided by the situation (can it KO, does it go first, its HP, whether the move is useful now). Role-dependent bonuses:
 
