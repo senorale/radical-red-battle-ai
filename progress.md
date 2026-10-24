@@ -2,6 +2,8 @@
 
 Where the research stands, so a new session can pick up without re-deriving it. Last updated 2026-10-23.
 
+**Current task:** the live AI predictor for mGBA. Start with `HANDOFF.md`, which has the user's plan and everything needed to continue.
+
 ## Goal
 
 Understand how Radical Red 4.1's enemy AI chooses moves, switches and switch-ins (singles and doubles). Later, possibly change game data such as route encounters.
