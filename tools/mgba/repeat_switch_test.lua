@@ -59,8 +59,8 @@ end
 local function finish()
 	local key = outcome_key(rec)
 	tally[key] = (tally[key] or 0) + 1
-	write(string.format("run %2d delay %4d frames_to_decision %4d random2_at_ShouldSwitch 0x%08X checks_entered [%s] => %s",
-		run, delay, frame, rec.rand2 or 0, table.concat(rec.checks, ","), key))
+	write(string.format("run %2d delay %4d frames_to_decision %4d random2_at_ShouldSwitch 0x%08X checks_entered [%s] => %s%s",
+		run, delay, frame, rec.rand2 or 0, table.concat(rec.checks, ","), key, rec.scores and ("  scores: " .. rec.scores) or ""))
 	if not rec.switched and not rec.move then emu:screenshot(here .. "logs/repeat_timeout_" .. run .. ".png") end
 	phase = "load"
 end
@@ -83,6 +83,18 @@ local function on_switch_store()
 	rec.decided = true
 	finish()
 end
+-- 0x090C83AC: singles scores final (AI struct = *(gBattleResources 0x02023FF4) + 0x14, score[4] at +4).
+local function on_scores()
+	if phase ~= "run" or rec.decided or not rec.stayed then return end
+	local ai = emu:read32(emu:read32(0x02023FF4) + 0x14)
+	local b = emu:read8(0x02023D6B)
+	local t = {}
+	for i = 0, 3 do
+		local id = emu:read16(S.BATTLE_MONS + b * S.BATTLE_MON_SIZE + 0x0C + i * 2)
+		if id ~= 0 then t[#t + 1] = string.format("%s %d", S.move_name(emu, id), S.signed8(emu:read8(ai + 4 + i))) end
+	end
+	rec.scores = table.concat(t, ", ")
+end
 local function on_move_exit()
 	if phase ~= "run" or rec.decided or not rec.stayed then return end
 	rec.move = emu:readRegister("r0") & 0xFF
@@ -96,6 +108,7 @@ emu:setBreakpoint(on_should_switch, 0x090D824C)
 emu:setBreakpoint(on_should_switch_ret, 0x090D8264)
 emu:setBreakpoint(on_switch_store, 0x090C8246)
 emu:setBreakpoint(on_move_exit, 0x090C837A)
+emu:setBreakpoint(on_scores, 0x090C83AC)
 for _, c in ipairs(CHECKS) do
 	emu:setBreakpoint(function()
 		if phase == "run" and rec.checks and not rec.decided then
