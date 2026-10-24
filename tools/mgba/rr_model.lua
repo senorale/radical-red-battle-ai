@@ -22,7 +22,8 @@
 --   "good idea to boost": you have no phazing move, cannot 2HKO it, and it does not KO first.
 --   status moves other than healing, poison, Stockpile and stat boosts are not scored ("?").
 --   switch checks: only the 25% roll.
--- Measured on the rr.ss6 battle (16 enemy move decisions): every move score matched.
+-- Measured on two rr.ss6 battle paths (mash A; switch to Pignite on turn 1, 31 enemy move decisions):
+-- every move score matched except Recover at full HP once (bonus via 0x090C4C08, not modelled).
 
 local S = require("rr_state")
 local M = {}
@@ -167,12 +168,24 @@ local function status_bonus(role, boost, foe_can_2hko)
 	return 0
 end
 
--- Stat-boost bonus by role (0x090C5D0C, table 0x090C5E0E), "good idea to boost" (0x090C3C64)
--- approximated as: you have no Roar/Whirlwind/Haze-type move (the 50% main-Random skip and the
--- other conditions are not modelled). Returns nil when no bonus.
+-- Stat-boost bonus by role (0x090C5D0C, table 0x090C5E0E). "Good idea to boost" (0x090C3C64), singles:
+-- no if you have a Roar/Whirlwind/Haze-type move (a 50% main-Random coin can skip this; not modelled);
+-- if the AI moves first: yes when you cannot KO it, counting its end-of-turn chip (0x090E031C,
+-- 0x090DADF8), and the stat is below +3; if it moves second: yes when you cannot 2HKO it and the
+-- stat is below +4. Returns nil when no bonus.
 local STAT_BOOST = { [1] = 5, [2] = 5, [3] = 5, [5] = 4, [7] = 4, [8] = 3, [9] = 5, [10] = 3 }
-local function stat_boost(role, foe_phazes, foe_can_2hko, ai_ko_first)
-	if foe_phazes or foe_can_2hko or ai_ko_first then return nil end
+-- Stat each boosting effect raises (stage index name in rr_state).
+local BOOST_STAT = { [0x0A] = "atk", [0x32] = "atk", [0x8B] = "atk", [0xD0] = "atk", [0xD4] = "atk",
+	[0x0B] = "def", [0x33] = "def", [0xA0] = "def", [0xCE] = "def", [0x0C] = "spe", [0x34] = "spe",
+	[0x0D] = "spa", [0x35] = "spa", [0xD3] = "spa", [0x0E] = "spd", [0x36] = "spd" }
+local function stat_boost(role, effect, ai, ctx)
+	if ctx.foe_phazes then return nil end
+	local stage = ai.stages[BOOST_STAT[effect] or "atk"] - 6
+	if ctx.ai_first then
+		if ctx.foe_can_ko or stage >= 3 then return nil end
+	else
+		if ctx.foe_can_2hko or stage >= 4 then return nil end
+	end
 	return STAT_BOOST[role]
 end
 
@@ -216,16 +229,31 @@ function M.predict(mem, ai_b, target_b, opts)
 		end
 	end
 	-- Can the foe 2HKO the AI (its best move, approximation)?
-	local foe_best, foe_phazes = 0, false
+	local foe_best, foe_phazes, foe_cached = 0, false, false
 	for i = 0, 3 do
 		if foe.moves[i] ~= 0 then
 			local fm = M.move(mem, foe.moves[i], foe)
 			if fm.effect == 0x1C or fm.effect == 0x19 or fm.effect == 0xDE then foe_phazes = true end
-			local d = (opts and opts.cache and M.cached_damage(mem, target_b, ai_b, i)) or M.damage(mem, foe, ai, fm, M.KO_ROLL)
+			local cd = opts and opts.cache and M.cached_damage(mem, target_b, ai_b, i)
+			if cd then foe_cached = true end
+			local d = cd or M.damage(mem, foe, ai, fm, M.KO_ROLL)
 			if d > foe_best then foe_best = d end
 		end
 	end
 	local foe_can_2hko = foe_best * 2 >= ai.hp
+	-- End-of-turn damage the AI takes: RR's cache gNewBS +0x810 +battler*4 (0x090DADF8, all sources,
+	-- RR's own immunity checks); fallback sandstorm 1/16 unless Rock/Ground/Steel (abilities ignored).
+	local chip = 0
+	local w = mem:read16(M.WEATHER)
+	local cached_chip = opts and opts.cache and mem:read32(mem:read32(M.GNEWBS) + 0x810 + ai_b * 4)
+	if cached_chip and cached_chip ~= 0xFFFFFFFF then
+		chip = cached_chip
+	elseif w & 0x18 ~= 0 then
+		local immune = false
+		for _, t in ipairs({ ai.type1, ai.type2, ai.type3 }) do if t == 5 or t == 4 or t == 8 then immune = true end end
+		if not immune then chip = ai.max_hp // 16 end
+	end
+	local foe_can_ko = foe_best + chip >= ai.hp
 	-- Goes first: priority, then Speed, against the AI's predicted move for you (MoveWouldHitFirst
 	-- 0x090DA0D2 uses that prediction); Speed ties count as going second.
 	local foe_pred = M.predicted_move(mem, target_b, ai_b)
@@ -240,6 +268,7 @@ function M.predict(mem, ai_b, target_b, opts)
 		end
 	end
 	local ai_can_ko = best_dmg >= foe.hp
+	local boost_ctx = { foe_phazes = foe_phazes, foe_can_2hko = foe_can_2hko, foe_can_ko = foe_can_ko, ai_first = ai_first_base }
 	-- RR's strongest-move cache is what the AI uses (it can lag one Pokemon behind after a faint
 	-- replacement, seen in game); fall back to the model's own pick when it is empty.
 	if opts and opts.cache then
@@ -257,14 +286,17 @@ function M.predict(mem, ai_b, target_b, opts)
 			if eff == 0 then
 				add(-15, "no effect")
 			else
-				local goes_first = mv.priority > foe_prio or (mv.priority == foe_prio and ai_first_base)
+				-- RR's MoveWouldHitFirst 0x090DA062: higher priority than your predicted move wins; otherwise
+				-- (equal OR LOWER, asm 0x090DA0A6 `ble`) it falls through to bracket and Speed, so your
+				-- priority advantage is ignored. With no prediction only positive priority counts.
+				local goes_first = (foe_pred ~= 0 and mv.priority > foe_prio) or (foe_pred == 0 and mv.priority > 0) or ai_first_base
 				local acc = mv.accuracy == 0 and 101 or mv.accuracy
 				local ko = dmg[i] >= foe.hp and acc == best_ko_acc
 				if ko and goes_first then add(9, "KO, goes first")
 				elseif ko and not has_protect then add(SLOW_KO[role] or 0, "KO, goes second (role)")
 				elseif i == strongest then add(2, "strongest move") end
 				if BOOST[mv.effect] then
-					local b = stat_boost(role, foe_phazes, foe_can_2hko, ai_can_ko and ai_first_base)
+					local b = stat_boost(role, mv.effect, ai, boost_ctx)
 					if b then add(b, "stat-boosting attack, bonus by role") else r.notes[#r.notes + 1] = "boost not a good idea" end
 				end
 				if mv.effect == 0x46 and mv.chance >= 50 and not ai_first_base and not ai_can_ko then
@@ -279,10 +311,17 @@ function M.predict(mem, ai_b, target_b, opts)
 				elseif hp_pct >= 90 then add(-9, "healing at 90-99% HP")
 				else r.unknown = true; r.notes[#r.notes + 1] = "healing below 90% (bonus not modelled)" end
 			elseif e == 0x21 or e == 0x42 then -- Toxic / poison
-				if foe.status1 == 0 and eff ~= 0 then add(status_bonus(role, 1, foe_can_2hko), "poison, status bonus by role (boost 1)")
-				else r.unknown = true end
+				-- Negatives 0x090CB186-0x090CB1C2: -10 if it would have no effect or you cannot be poisoned
+				-- (CanBePoisoned 0x09076380: Immunity 0x11, Poison or Steel type unless the AI has Corrosion
+				-- 0x9E, already statused).
+				local can = foe.status1 == 0 and foe.ability ~= 0x11
+				if ai.ability ~= 0x9E then
+					for _, t in ipairs({ foe.type1, foe.type2, foe.type3 }) do if t == 3 or t == 8 then can = false end end
+				end
+				if not can then add(-10, "you cannot be poisoned")
+				else add(status_bonus(role, 1, foe_can_2hko), "poison, status bonus by role (boost 1)") end
 			elseif e == 0xA0 or BOOST[e] then
-				local b = stat_boost(role, foe_phazes, foe_can_2hko, ai_can_ko and ai_first_base)
+				local b = stat_boost(role, mv.effect, ai, boost_ctx)
 				if b then add(b, "stat boost, bonus by role (max stacks not modelled)")
 				else r.notes[#r.notes + 1] = "boost not a good idea" end
 			else
@@ -311,6 +350,7 @@ function M.predict(mem, ai_b, target_b, opts)
 	out.odds = odds
 	out.foe_can_2hko, out.ai_first, out.ai_can_ko = foe_can_2hko, ai_first_base, ai_can_ko
 	out.cached = cached
+	out.dbg = string.format("spd ai %d you %d weather 0x%X yourbest %d%s chip %d", M.speed(mem, ai), M.speed(mem, foe), mem:read16(M.WEATHER), foe_best, foe_cached and "c" or "f", chip)
 	out.strongest_model = strongest and mvs[strongest].id or 0
 	out.strongest_cache = M.cached_strongest(mem, ai_b, target_b) or 0
 	out.foe_pred, out.foe_prio = foe_pred, foe_prio

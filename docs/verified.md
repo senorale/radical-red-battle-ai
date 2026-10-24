@@ -131,6 +131,36 @@ If the AI's type check says the move would miss outright, have no effect or fail
 - **Code:** Negatives `0x090CB2E0`-`0x090CB2F8`: type check `0x090838A4`, result `& 0x29` (missed, no effect, failed) gives -15. [ROM]
 - **Evidence:** in a traced battle, ThunderPunch against a Ground-type and Psybeam against a Dark-type each got -15 on every turn they were scored.
 
+## 10. "Who goes first" ignores your priority advantage [VERIFIED]
+
+When the AI checks whether its move hits before yours, it compares against the move it predicts you will use. Its own higher priority counts; your higher priority does not. If your move has higher priority, the AI still decides by Speed. Example: its Pin Missile against your predicted Fake Out (+3) counted as going first because it was faster, and got the +9 "KO, goes first" bonus.
+
+- **Code:** MoveWouldHitFirst `0x090DA062`: priorities from `0x0906EFC0`; `cmp r7,r0; ble` at `0x090DA0A6` sends "equal **or lower**" to the bracket check (`0x0906F140`, quick-claw style) and then Speed (`0x0906F284`, faster strictly wins, Trick Room swaps). [ROM]
+- **Evidence:** traced in game: AI priority 0, your predicted move priority 3, Speeds 40 vs 29, result "goes first".
+
+## 11. The AI's Speed includes weather abilities [VERIFIED]
+
+The AI's Speed comparison uses RR's Speed calculation: stat stages, and x2 for Sand Rush in sandstorm, Swift Swim in rain, Chlorophyll in sun and Slush Rush in hail (also Tailwind, paralysis, Quick Feet).
+
+- **Code:** `0x0906F284`, weather abilities in `0x0906E320` (Sand Rush `0x7C` with weather `0x18`, Swift Swim `0x21`, Chlorophyll `0x22`, Slush Rush `0xAB`). [ROM]
+- **Evidence:** traced in game: a Sand Rush Pokemon with 20 Speed was compared as 40 in sandstorm.
+
+## 12. Toxic and other poison moves get -10 if you cannot be poisoned [VERIFIED]
+
+- **Code:** Negatives `0x090CB186`-`0x090CB1C2`: -10 if the move would have no effect, if you cannot be poisoned (`0x09076380`: Immunity, Poison or Steel type unless the AI has Corrosion, already statused), or if a Substitute blocks it. [ROM]
+- **Evidence:** Toxic against a Poison-type Pokemon got -10 and no status bonus on every turn.
+
+## 13. When a stat boost counts as a good idea [VERIFIED]
+
+Stat-boosting moves (Swords Dance, Power-Up Punch, Stockpile, ...) only get their role bonus when boosting is a good idea:
+
+- never if you have a move that undoes boosts (Roar, Whirlwind, Haze, Clear Smog and similar), except on a 50% coin from the main `Random`;
+- if the AI moves first: only if you cannot KO it, counting the damage it takes at the end of the turn (weather, poison, ...), and only while that stat is below +3;
+- if it moves second: only if you cannot 2HKO it, and only while that stat is below +4.
+
+- **Code:** `0x090C3C64` (with `0x090E031C` for "you can KO it, including end-of-turn damage" and `0x090DADF8` for that damage, cached at `gNewBS+0x810`). [ROM]
+- **Evidence:** in two traced battles every stat-boost score matched these conditions: no bonus against a Pokemon with Roar, none once Attack reached +3, bonus restored when sandstorm damage did not count (the Pokemon was immune to it).
+
 ## Worked example: Hippopotas against your Psyduck
 
 How rules 2 to 9 combine in one real position (test state `rr.ss6`, start of the battle). Every number below was traced in the game with `RR_TEST_TRACE`: the AI's score helpers (`0x090E1380` adds, `0x090E1394` subtracts), who called them, and the branch that led there. Your Psyduck (Water Pulse, Confusion, Tail Whip, Water Gun) faces the enemy's Hippopotas (Bulldoze, Rock Tomb, Toxic, Slack Off). The enemy's bench: Cacnea, Lunatone, Lileep, Archen, Varoom.

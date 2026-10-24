@@ -36,6 +36,22 @@ local STEP = tonumber(os.getenv("RR_TEST_DELAY_STEP") or "7")
 local MAX_FRAMES = tonumber(os.getenv("RR_TEST_MAX_FRAMES") or "4000")
 local SEED_MODE = os.getenv("RR_TEST_SEED")
 local DECISIONS = tonumber(os.getenv("RR_TEST_DECISIONS") or "1") -- enemy decisions (turns) recorded per run
+-- RR_TEST_PLAN="1:switch4,3:switch2": after the enemy's decision for turn N, your action that turn is
+-- a switch to that party slot (battle menu DOWN to POKEMON, A, then the slot in RR's 2 x 3 grid, A, A).
+-- Every other turn mashes A (FIGHT, first move).
+local PLAN = {}
+for k, act in (os.getenv("RR_TEST_PLAN") or ""):gmatch("(%d+):(%w+)") do PLAN[tonumber(k)] = act end
+local function plan_keys(act)
+	local slot = tonumber(act:match("^switch(%d)$") or "")
+	if not slot then return nil end
+	local A, DOWN, RIGHT = 1 << C.GBA_KEY.A, 1 << C.GBA_KEY.DOWN, 1 << C.GBA_KEY.RIGHT
+	-- RR's party menu is a 2 x 3 grid: slots 0, 2, 4 on the left, 1, 3, 5 on the right.
+	local q = { { 0, 240 }, { DOWN, 4 }, { 0, 30 }, { A, 4 }, { 0, 120 } }
+	for _ = 1, slot // 2 do q[#q + 1] = { DOWN, 4 }; q[#q + 1] = { 0, 20 } end
+	if slot % 2 == 1 then q[#q + 1] = { RIGHT, 4 }; q[#q + 1] = { 0, 20 } end
+	q[#q + 1] = { A, 4 }; q[#q + 1] = { 0, 60 }; q[#q + 1] = { A, 4 }; q[#q + 1] = { 0, 60 }
+	return q
+end
 math.randomseed(12345)
 local RANDOM2 = 0x020386D0
 local ACTIVE_BATTLER = 0x02023BC4
@@ -70,7 +86,13 @@ local function field_text()
 	local t = {}
 	for bnk = 0, 1 do
 		local m = S.read_battle_mon(emu, bnk)
-		t[#t + 1] = string.format("%s %s %d/%d", bnk == 0 and "you" or "foe", S.species_name(emu, m.species), m.hp, m.max_hp)
+		local st = {}
+		for k = 1, 7 do
+			local v = m.stages[S.STAGE_NAMES[k]] - 6
+			if v ~= 0 then st[#st + 1] = string.format("%s%+d", S.STAGE_NAMES[k], v) end
+		end
+		t[#t + 1] = string.format("%s %s %d/%d%s", bnk == 0 and "you" or "foe", S.species_name(emu, m.species), m.hp, m.max_hp,
+			#st > 0 and (" " .. table.concat(st, " ")) or "")
 	end
 	return table.concat(t, ", ")
 end
@@ -85,6 +107,7 @@ local function finish()
 		rec.decided, rec.stayed, rec.switched, rec.move, rec.move_name, rec.scores, rec.slot, rec.reason = nil
 		rec.checks, rec.check = {}, nil
 		last_frame = frame
+		if PLAN[rec.done] then rec.queue = plan_keys(PLAN[rec.done]) end
 		return
 	end
 	if rec.history then key = table.concat(rec.history, " ") .. " [turn " .. rec.done .. ": " .. key .. "]" end
@@ -138,8 +161,8 @@ local function on_scores()
 					ok and "=" or "!=", actual, r.unknown and "?" or "")
 			end
 		end
-		rec.model = string.format("model %d/%d scores [%s] role %s cached-dmg %d your-predicted %s (prio %d) ai-first %s strongest model %s cache %s", match, total, table.concat(c, ", "),
-			Model.ROLE_NAMES[rec.pred.role] or tostring(rec.pred.role), rec.pred.cached or 0, S.move_name(emu, rec.pred.foe_pred), rec.pred.foe_prio, tostring(rec.pred.ai_first), S.move_name(emu, rec.pred.strongest_model), S.move_name(emu, rec.pred.strongest_cache))
+		rec.model = string.format("model %d/%d scores [%s] role %s cached-dmg %d your-predicted %s (prio %d) ai-first %s strongest model %s cache %s %s", match, total, table.concat(c, ", "),
+			Model.ROLE_NAMES[rec.pred.role] or tostring(rec.pred.role), rec.pred.cached or 0, S.move_name(emu, rec.pred.foe_pred), rec.pred.foe_prio, tostring(rec.pred.ai_first), S.move_name(emu, rec.pred.strongest_model), S.move_name(emu, rec.pred.strongest_cache), rec.pred.dbg or "")
 		rec.scores = rec.scores .. " | " .. rec.model
 	end
 end
@@ -216,6 +239,13 @@ callbacks:add("frame", function()
 	frame = frame + 1
 	local keys = 0
 	if frame > delay and (frame - delay) % 12 < 3 then keys = 1 << C.GBA_KEY.A end
+	if rec.queue and #rec.queue > 0 then
+		local q = rec.queue[1]
+		emu:setKeys(q[1])
+		q[2] = q[2] - 1
+		if q[2] <= 0 then table.remove(rec.queue, 1) end
+		return
+	end
 	-- Your active Pokemon fainted: alternate RIGHT and A until it is replaced. In the party menu RIGHT
 	-- moves the cursor off the fainted first slot (and does nothing after that), A opens the menu
 	-- and sends the Pokemon out.
