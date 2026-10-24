@@ -70,7 +70,7 @@ Side-effect bonuses such as rule 6's Speed drop come on top.
 
 Every turn the AI gives each Pokemon on the field a role (CFRU calls it a "fighting style"), worked out from that Pokemon's current 4 moves (and its ability and item). The role does not look at the battle situation: the same Pokemon with the same moves gets the same role all battle.
 
-**How the role is set (singles)**, first match wins:
+**How the role is set (singles)**, first match wins. The table is CFRU's `PredictFightingStyle`; in the game three rows are verified so far (setup status sweeper, setup stats sweeper, pure attacker by 4 attacks), the rest is [CFRU]:
 
 | Moveset | Role |
 |---|---|
