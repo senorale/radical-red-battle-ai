@@ -64,7 +64,7 @@ Side-effect bonuses such as rule 6's Speed drop come on top.
 
 - **Code:** Positives, the KO checks around `0x090D66DE`-`0x090D67DA`; slow-KO bonus `0x090C69F4` (role switch, `+8` at `0x090C6A28`), called from `0x090D67DA`; strongest move `IsStrongestMove` `0x090DFE00`, `+2` set at `0x090D692A` and added at `0x090D67A6`. Same as CFRU's `DamageMoveViabilityIncrease`. [ROM]
 - **Evidence:** traced score changes over several turns: a move that KOs while the AI moves second got +8 (role 3), and once your new Pokemon resisted it, that move got nothing and the AI's strongest other move got +2.
-- **Not yet verified:** the +9 for a KO that goes first, and the other roles' slow-KO amounts.
+- **Also seen in a full traced battle:** +9 for a KO that goes first (Pin Missile, Bullet Seed, Psybeam, AncientPower, all added at `0x090D67A6`), and the slow-KO bonus +6 for a setup stats sweeper. **Not yet verified:** the other roles' slow-KO amounts.
 
 ## 8. Roles: what they are, how they are set, what they change [VERIFIED]
 
