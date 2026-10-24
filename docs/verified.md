@@ -91,9 +91,20 @@ The role is recomputed every turn but only changes mid-battle through battle sta
 
 **What the role changes:** only the *size* of some bonuses. Whether a bonus applies at all is decided by the situation (can it KO, does it go first, its HP, whether the move is useful now). Role-dependent bonuses:
 
-- status moves (Toxic, Stockpile, ...): setup status sweeper 4 + boost, stall and cleric 3 + boost, screens 2 + boost, pure attacker 0 (`IncreaseStatusViability` `0x090C5C90`);
-- stat-boosting moves (Power-Up Punch, ...): by role (called from `0x090C5F26`);
-- a KO that goes second (rule 7): setup status sweeper +8, setup stats sweeper +6 or +8, other roles 3 to 9 (`0x090C69F4`).
+- **status moves** (Toxic, Stockpile, ...), `0x090C5C90`, decoded from RR's jump table at `0x090C5CAE` ("boost" is the move's own value, e.g. Toxic 1):
+
+  | Role | Bonus |
+  |---|---|
+  | pure attacker, none | 0 |
+  | setup stats sweeper | 3 + boost, only if you cannot 2HKO it (`0x090DFE50`); CFRU gives a flat 3 |
+  | setup status sweeper, phazing support | 4 + boost |
+  | screens support (and screens sweeper, unused in singles) | 2 + boost |
+  | stall, cleric | 3 + boost |
+  | Baton Pass support | +1, only if boost is 3 or more |
+  | hazard setter | 3 |
+
+- **stat-boosting moves** (Power-Up Punch, ...): sized by role (called from `0x090C5F26`; table not decoded yet).
+- **a KO that goes second** (rule 7), `0x090C69F4`, jump table at `0x090C6A12`: pure attacker and setup status sweeper +8; setup stats sweeper +8 if knocking out your last Pokemon is the better play (`0x090C3B48`), else +6; stall and phazing support 9 or 8; Baton Pass support 9, 8 or 3; cleric 9, 7 or 6; screens 9 or 6; hazard setter 9, 6 or 3 (the lower values when you cannot 2HKO it). Same as CFRU.
 
 So the role decides close calls between a status or setup move and an attack. Example: when it cannot KO, a setup status sweeper's Stockpile (105) beats its strongest attack (102), while a pure attacker's Stockpile would stay at 100 and it would attack.
 
