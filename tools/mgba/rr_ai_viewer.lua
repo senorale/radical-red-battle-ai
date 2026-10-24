@@ -180,19 +180,61 @@ local function on_preset() preset[emu:read8(ACTIVE_BATTLER)] = emu:readRegister(
 local function on_switch() report_switch(emu:read8(ACTIVE_BATTLER), emu:readRegister("r2") & 0xFF, "SWITCHES") end
 local function on_ko_switch() report_switch(emu:read8(ACTIVE_BATTLER), emu:readRegister("r4") & 0xFF, "replacement after faint") end
 
-local installed = false
-local function install()
-	if installed or not emu then return end
-	emu:setBreakpoint(snapshot, SITE_SINGLES)
-	emu:setBreakpoint(snapshot, SITE_DOUBLES)
-	emu:setBreakpoint(on_exit, SITE_EXIT)
-	emu:setBreakpoint(on_preset, SITE_PRESET)
-	emu:setBreakpoint(on_switch, SITE_SWITCH)
-	emu:setBreakpoint(on_ko_switch, SITE_KO_SWITCH)
-	installed = true
+-- Diagnostics: every hook hit and error goes to the mGBA log and to logs/viewer.log next to
+-- this script (git-ignored), so a session without output can be debugged afterwards.
+local LOG_PATH
+do
+	local src = debug.getinfo(1, "S").source
+	local dir = src:sub(1, 1) == "@" and src:sub(2):match("(.*/)") or nil
+	if dir then LOG_PATH = dir .. "logs/viewer.log" end
+end
+local function log(msg)
+	local line = string.format("[rr-ai] %s", msg)
+	pcall(function() console:log(line) end)
+	if LOG_PATH then
+		pcall(function()
+			local f = io.open(LOG_PATH, "a")
+			if f then f:write(os.date("%H:%M:%S "), line, "\n"); f:close() end
+		end)
+	end
+end
+
+local function guard(name, fn)
+	return function()
+		local frame = -1
+		pcall(function() frame = emu:currentFrame() end)
+		log(string.format("hit %s frame %d", name, frame))
+		local ok, err = pcall(fn)
+		if not ok then
+			log(string.format("ERROR in %s: %s", name, tostring(err)))
+			buffer:print(string.format("ERROR in %s: %s\n", name, tostring(err)))
+		end
+	end
+end
+
+local SITES = {
+	{ "singles", snapshot, SITE_SINGLES }, { "doubles", snapshot, SITE_DOUBLES }, { "exit", on_exit, SITE_EXIT },
+	{ "preset", on_preset, SITE_PRESET }, { "switch", on_switch, SITE_SWITCH }, { "ko_switch", on_ko_switch, SITE_KO_SWITCH },
+}
+local breakpoint_ids = {}
+
+-- Runs at load and again on every start/reset, since a restarted core may drop breakpoints.
+local function install(why)
+	if not emu then log("install(" .. tostring(why) .. "): no emu yet"); return end
+	for _, id in ipairs(breakpoint_ids) do pcall(function() emu:clearBreakpoint(id) end) end
+	breakpoint_ids = {}
+	local parts = {}
+	for _, site in ipairs(SITES) do
+		local id = emu:setBreakpoint(guard(site[1], site[2]), site[3])
+		breakpoint_ids[#breakpoint_ids + 1] = id
+		parts[#parts + 1] = string.format("%s@%08X=%s", site[1], site[3], tostring(id))
+	end
+	pending, preset = {}, {}
+	log("install(" .. tostring(why) .. "): " .. table.concat(parts, " "))
 	buffer:clear()
 	buffer:print("RR AI viewer ready. Scores appear when the enemy picks a move.\n")
 end
 
-callbacks:add("start", install)
-install()
+callbacks:add("start", function() install("start") end)
+callbacks:add("reset", function() install("reset") end)
+install("load")

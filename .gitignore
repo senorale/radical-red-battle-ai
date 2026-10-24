@@ -22,3 +22,6 @@ vendor/
 
 # Ghidra project, symbols and decompiled output (derived from the ROM)
 tools/ghidra/build/
+
+# mGBA viewer logs (contain game data)
+tools/mgba/logs/
