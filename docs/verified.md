@@ -21,7 +21,7 @@ Before any reason to switch is considered, the AI rolls `Random2() % 4`. On 0 (2
 
 ## 3. The AI's randomness is a fixed formula, not true randomness [VERIFIED]
 
-All the AI's coin flips (the 25% switch skip, switch check rolls, ties between moves or switch-ins) come from `Random2`.
+The AI's coin flips traced so far (the 25% switch skip, switch check rolls, the Speed-drop coin, ties between moves or switch-ins) come from `Random2`. At least one does not: the "good idea to boost" check (`0x090C3C64`) uses the main generator `Random` (`0x08044EC8`, state `0x03005000`, `state * 0x41C64E6D + 0x6073`).
 
 - **Code:** `Random2` `0x0808322C`: `state = state * 0x41C64E6D + 0x3039`, returns `state >> 16`. The state is at `0x020386D0`, which in vanilla FireRed is the wild encounter generator (`sWildEncounterData`); RR's AI uses the same one. It only advances when something calls it (wild encounter checks while walking, and the AI's own calculations). [ROM]
 - **Evidence:** loading a savestate and waiting 0, 7 or 14 frames before acting gave the same `Random2` state at the decision and the same decision. Changing only the state changed the decision as the formula predicts (rule 2).
@@ -103,7 +103,20 @@ The role is recomputed every turn but only changes mid-battle through battle sta
   | Baton Pass support | +1, only if boost is 3 or more |
   | hazard setter | 3 |
 
-- **stat-boosting moves** (Power-Up Punch, ...): sized by role (called from `0x090C5F26`; table not decoded yet).
+- **stat-boosting moves** (Swords Dance, Power-Up Punch, ...), `0x090C5D0C`, jump table at `0x090C5E0E` (a near-identical second table at `0x090C6098` is used when your role is stall, Baton Pass, cleric, screens support or phazing and your last move was a status move; in singles it gives the same amounts). Most roles first ask "is boosting a good idea now?" (`0x090C3C64`, below); if not, no bonus:
+
+  | Role | Bonus when boosting is a good idea |
+  |---|---|
+  | pure attacker | 3 + boost (if not a good idea: +1, only for an attack that raises Attack or Sp. Atk) |
+  | setup stats sweeper | 3 + boost |
+  | setup status sweeper | 5 (the status-move bonus with boost 1) |
+  | screens support | 3 |
+  | stall, cleric | 4 |
+  | phazing support | 5, but none if it has a Haze-type move itself |
+  | hazard setter | 3 |
+  | Baton Pass support | no good-idea check: Attack, Speed, Sp. Atk, accuracy +5 while that stat is below +4; Defense, Sp. Def +4 below +4; evasion +6 below +6 |
+
+  **Good idea to boost** (`0x090C3C64`, singles, [ROM]): no if your ability ignores its boosts (unless it has a move that gets around that). It needs the AI not badly poisoned (unless above 75% HP or with a Poison Heal-type ability). It needs you to have no way to undo the boost (Roar, Whirlwind, Haze, Clear Smog, Dragon Tail and similar, unless they would fail on it) and no Encore-type move, unless you cannot 2HKO it; a 50% coin from the main generator `Random` skips these two checks. Then, if its move cannot KO you: yes when you are about to switch or cannot act, or for Speed when it is below +3 and you cannot KO it, or when you cannot 2HKO it and the stat is below +4. If its move can KO you: yes only in narrow cases, with the stat below +3.
 - **a KO that goes second** (rule 7), `0x090C69F4`, jump table at `0x090C6A12`: pure attacker and setup status sweeper +8; setup stats sweeper +8 if knocking out your last Pokemon is the better play (`0x090C3B48`), else +6; stall and phazing support 9 or 8; Baton Pass support 9, 8 or 3; cleric 9, 7 or 6; screens 9 or 6; hazard setter 9, 6 or 3 (the lower values when you cannot 2HKO it). Same as CFRU.
 
 So the role decides close calls between a status or setup move and an attack. Example: when it cannot KO, a setup status sweeper's Stockpile (105) beats its strongest attack (102), while a pure attacker's Stockpile would stay at 100 and it would attack.
