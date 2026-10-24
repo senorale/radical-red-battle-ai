@@ -62,8 +62,16 @@ local function outcome_key(r)
 end
 
 local last_frame = 0 -- frame of the previous decision in this run
+local function field_text()
+	local t = {}
+	for bnk = 0, 1 do
+		local m = S.read_battle_mon(emu, bnk)
+		t[#t + 1] = string.format("%s %s %d/%d", bnk == 0 and "you" or "foe", S.species_name(emu, m.species), m.hp, m.max_hp)
+	end
+	return table.concat(t, ", ")
+end
 local function finish()
-	local key = outcome_key(rec)
+	local key = outcome_key(rec) .. " {" .. field_text() .. "}"
 	rec.done = (rec.done or 0) + 1
 	if rec.done < DECISIONS and (rec.switched or rec.move) then
 		rec.history = rec.history or {}

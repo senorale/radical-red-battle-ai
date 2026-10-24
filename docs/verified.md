@@ -52,9 +52,23 @@ In single battles, an attacking move whose side effect lowers your Speed (Bulldo
 - **Evidence:** replays where the AI stayed in with two Speed-lowering attacks, logging the coin at `0x090D2A5A` (`RR_TEST_TRACE=090D2A5A:r0 tools/mgba/run_repeat_test.sh ...`): in 26 of 26 move scorings, coin 0 gave +3 and coin 1 gave nothing (Bulldoze 105 or 102, Rock Tomb 103 or 100).
 - **Side note:** the AI's prediction pass runs the same scoring first, so it uses up `Random2` rolls before the real choice.
 
+## 7. How a damaging move is scored: KO bonus, else strongest-move bonus (singles) [VERIFIED]
+
+For each damaging move the AI gives at most one of these, checked in this order:
+
+1. **KO and goes first:** +9.
+2. **KO but goes second** ("slow KO"), when the AI has no Protect, you are not predicted to switch, and you would not faint on your own anyway: a bonus set by the AI's role (setup status sweeper +8; the other roles 3 to 9, see `IncreaseViabilityForSlowKOMove` in CFRU `ai_advanced.c`).
+3. **Otherwise, its strongest move:** +2 (a role-based 4 to 8 instead if it KOs in one hit and nothing else changed its score).
+
+Side-effect bonuses such as rule 6's Speed drop come on top.
+
+- **Code:** Positives, the KO checks around `0x090D66DE`-`0x090D67DA`; slow-KO bonus `0x090C69F4` (role switch, `+8` at `0x090C6A28`), called from `0x090D67DA`; strongest move `IsStrongestMove` `0x090DFE00`, `+2` set at `0x090D692A` and added at `0x090D67A6`. Same as CFRU's `DamageMoveViabilityIncrease`. [ROM]
+- **Evidence:** traced score changes over several turns: a move that KOs while the AI moves second got +8 (role 3), and once your new Pokemon resisted it, that move got nothing and the AI's strongest other move got +2.
+- **Not yet verified:** the +9 for a KO that goes first, and the other roles' slow-KO amounts.
+
 ## Worked example: Hippopotas against your Psyduck
 
-How rules 2 to 6 combine in one real position (test state `rr.ss6`, start of the battle). Every number below was traced in the game with `RR_TEST_TRACE`: the AI's score helpers (`0x090E1380` adds, `0x090E1394` subtracts), who called them, and the branch that led there. Your Psyduck (Water Pulse, Confusion, Tail Whip, Water Gun) faces the enemy's Hippopotas (Bulldoze, Rock Tomb, Toxic, Slack Off). The enemy's bench: Cacnea, Lunatone, Lileep, Archen, Varoom.
+How rules 2 to 7 combine in one real position (test state `rr.ss6`, start of the battle). Every number below was traced in the game with `RR_TEST_TRACE`: the AI's score helpers (`0x090E1380` adds, `0x090E1394` subtracts), who called them, and the branch that led there. Your Psyduck (Water Pulse, Confusion, Tail Whip, Water Gun) faces the enemy's Hippopotas (Bulldoze, Rock Tomb, Toxic, Slack Off). The enemy's bench: Cacnea, Lunatone, Lileep, Archen, Varoom.
 
 **Step 1: the 25% roll (rule 2).** 1 turn in 4, the AI skips switching and goes to step 3.
 
@@ -85,3 +99,11 @@ The scores do not decide here; the first Pokemon (in that order) that absorbs Wa
 | Switch to Lileep | 75% | 77 | 37 |
 | Stay, Toxic | 25% x (50% + 50% x 50%) = 18.75% | 17 | 10 |
 | Stay, Bulldoze | 25% x 50% x 50% = 6.25% | 6 | 3 |
+
+**Turns 2 to 4 (Lileep on the field).** Lileep (Stockpile, Recover, Hidden Power, Mega Drain) is also a setup status sweeper (2 attacks plus status moves). It moves after your Pokemon (Speed 17).
+
+| Turn | Your Pokemon | Stockpile | Recover | Hidden Power | Mega Drain | Used |
+|---|---|---|---|---|---|---|
+| 2 | Psyduck | 105 (+5, role) | 90 (-10, full HP) | 100 | **108** (+8, KOs you but goes second, rule 7) | Mega Drain, KO |
+| 3 | Marill | 105 | 90 | 100 | **108** (same) | Mega Drain, KO |
+| 4 | Nuzleaf (Grass/Dark resists Mega Drain) | **105** | 90 | 102 (+2, now its strongest move) | 100 (no KO, no bonus) | Stockpile |
