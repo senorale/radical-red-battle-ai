@@ -42,3 +42,12 @@ When two or more moves share the highest score, the AI picks one of them at rand
 - **Code:** move choice `0x090C82C0` collects the slots with the top score and picks `list[Random2() % count]` (`__modsi3` at `0x09000438`). [ROM]
 - **Evidence:** in replays where a damaging move tied a status move at the top score (105), each was chosen 6 times out of 12. In replays without the tie, the higher-scored move was chosen every time (11 of 11).
 - **Related, [ROM] only:** switch-in candidates with equal scores are not an even pick. The scorer `0x090D7168` walks the party in order and a later equal score takes over on a 50% flip, so later party slots are favored.
+
+## 6. Speed-lowering attacks get +3 on a coin flip (singles) [VERIFIED]
+
+In single battles, an attacking move whose side effect lowers your Speed (Bulldoze, Rock Tomb, Icy Wind, Mud Shot, ...) gets +3 on a 50% coin flip, when lowering your Speed is useful to the AI. +3 lifts it above the +2 the strongest move gets. Radical Red added the coin flip; in CFRU the +3 is always given.
+
+- **Conditions** ([ROM], same as CFRU's `EFFECT_SPEED_DOWN_HIT` case and `GoodIdeaToLowerSpeed`): the Speed drop happens at least 50% of the time (`0x090DB220`, doubled by Serene Grace), your Pokemon is not behind a Substitute the move cannot hit through (`0x09075B98`), the AI cannot KO you first, the AI is not faster than you, and your ability does not block the drop (Contrary, Clear Body and similar) (`0x090E006C`).
+- **Code:** Positives, assembly `0x090D29D0`-`0x090D2A6A`: after the conditions, `Random2() % 2` (`0x090D2A4C`-`0x090D2A5C`); on 0, `+3` via `0x090E1380` at `0x090D2A62`. [ROM]
+- **Evidence:** replays where the AI stayed in with two Speed-lowering attacks, logging the coin at `0x090D2A5A` (`RR_TEST_TRACE=090D2A5A:r0 tools/mgba/run_repeat_test.sh ...`): in 26 of 26 move scorings, coin 0 gave +3 and coin 1 gave nothing (Bulldoze 105 or 102, Rock Tomb 103 or 100).
+- **Side note:** the AI's prediction pass runs the same scoring first, so it uses up `Random2` rolls before the real choice.

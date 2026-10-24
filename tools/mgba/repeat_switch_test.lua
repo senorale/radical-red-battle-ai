@@ -10,6 +10,8 @@
 -- RR_TEST_SEED=random to overwrite the Random2 state (0x020386D0) with a different value each run.
 -- Random2 does not advance with frames (same state at the decision whatever the delay, tested on
 -- rr.ss6), so only a different seed shows the AI's Random2 coin flips.
+-- RR_TEST_TRACE="090D2A5A:r0,..." logs a register at an address each time it runs before the decision,
+-- with the move the AI is scoring (AI struct +2 moveConsidered).
 -- Prints '== done' at the end; the caller closes mGBA.
 --
 -- Addresses (RR 4.1, see rr_ai_viewer.lua for the evidence):
@@ -59,8 +61,9 @@ end
 local function finish()
 	local key = outcome_key(rec)
 	tally[key] = (tally[key] or 0) + 1
-	write(string.format("run %2d delay %4d frames_to_decision %4d random2_at_ShouldSwitch 0x%08X checks_entered [%s] => %s%s",
-		run, delay, frame, rec.rand2 or 0, table.concat(rec.checks, ","), key, rec.scores and ("  scores: " .. rec.scores) or ""))
+	write(string.format("run %2d delay %4d frames_to_decision %4d random2_at_ShouldSwitch 0x%08X checks_entered [%s] => %s%s%s",
+		run, delay, frame, rec.rand2 or 0, table.concat(rec.checks, ","), key, rec.scores and ("  scores: " .. rec.scores) or "",
+		rec.trace and ("  trace: " .. table.concat(rec.trace, "; ")) or ""))
 	if not rec.switched and not rec.move then emu:screenshot(here .. "logs/repeat_timeout_" .. run .. ".png") end
 	phase = "load"
 end
@@ -108,6 +111,17 @@ emu:setBreakpoint(on_should_switch, 0x090D824C)
 emu:setBreakpoint(on_should_switch_ret, 0x090D8264)
 emu:setBreakpoint(on_switch_store, 0x090C8246)
 emu:setBreakpoint(on_move_exit, 0x090C837A)
+for spec in (os.getenv("RR_TEST_TRACE") or ""):gmatch("[^,]+") do
+	local addr, reg = spec:match("^(%x+):(%w+)$")
+	assert(addr, "bad RR_TEST_TRACE entry " .. spec)
+	emu:setBreakpoint(function()
+		if phase ~= "run" or rec.decided then return end
+		local ai = emu:read32(emu:read32(0x02023FF4) + 0x14)
+		rec.trace = rec.trace or {}
+		rec.trace[#rec.trace + 1] = string.format("%s %s=%d (%s)", addr, reg, emu:readRegister(reg),
+			S.move_name(emu, emu:read16(ai + 2)))
+	end, tonumber(addr, 16))
+end
 emu:setBreakpoint(on_scores, 0x090C83AC)
 for _, c in ipairs(CHECKS) do
 	emu:setBreakpoint(function()
