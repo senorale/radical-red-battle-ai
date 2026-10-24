@@ -126,6 +126,9 @@ local SITE_PRESET = 0x090C80DE
 local SITE_SWITCH = 0x090C8246
 local SITE_KO_SWITCH = 0x09068B20
 local SITE_CHOOSE_POKEMON = 0x09068A28 -- OpponentHandleChoosePokemon entry
+-- 0x09068B0E: slot chosen (r4), just before 0x090D9D78 -> 0x090D6CB0 consumes the scorer's best
+-- (best <- second best, second <- 6). Best/second must be read here, not at the store.
+local SITE_KO_PICKED = 0x09068B0E
 local SITE_SCORER = 0x090D7168        -- switch-in scorer entry
 local SITE_SHOULD_SWITCH = 0x090D824C  -- ShouldSwitch entry
 local SITE_SHOULD_SWITCH_RET = 0x090D8264 -- every return passes here: mov r0,r4 (r4 = result)
@@ -178,9 +181,13 @@ end
 -- Why this slot: compares it with the scorer's best and second best for the battler
 -- (gNewBS +0x840/+0x841 +battler*2, written by the scorer 0x090D7168; GetMostSuitableMonToSwitchInto's
 -- core 0x090D8168 returns the best unless a partner already took it, then the second best).
-local function pick_reason(battler, slot, scores, preset_slot)
+local function read_best(battler)
 	local nbs = emu:read32(GNEWBS)
-	local best, second = emu:read8(nbs + 0x840 + battler * 2), emu:read8(nbs + 0x841 + battler * 2)
+	return emu:read8(nbs + 0x840 + battler * 2), emu:read8(nbs + 0x841 + battler * 2)
+end
+
+local function pick_reason(battler, slot, scores, preset_slot, best, second)
+	if best == nil then best, second = read_best(battler) end
 	local lines = {}
 	if preset_slot ~= nil and preset_slot ~= 6 then
 		lines[#lines + 1] = string.format("  pick: slot %d was set by the decision itself (AI_monToSwitchIntoId), not by best score", preset_slot)
@@ -265,6 +272,10 @@ local function on_choose_pokemon()
 	local gbs = emu:read32(GBATTLE_STRUCT)
 	ko_ctx[battler] = { preset = emu:read8(gbs + 0x92 + (battler & 1)), rescored = false }
 end
+local function on_ko_picked()
+	local ctx = ko_ctx[emu:read8(ACTIVE_BATTLER)]
+	if ctx then ctx.best, ctx.second = read_best(emu:read8(ACTIVE_BATTLER)) end
+end
 local function on_scorer()
 	local ctx = ko_ctx[emu:read8(ACTIVE_BATTLER)]
 	if ctx then ctx.rescored = true end
@@ -285,7 +296,7 @@ local function on_ko_switch()
 	end
 	local lines, scores, rows = report_switch(battler, slot,
 		fainted and "replacement after faint" or "sent out (forced switch)", extra)
-	for _, l in ipairs(pick_reason(battler, slot, scores, ctx.preset)) do lines[#lines + 1] = l end
+	for _, l in ipairs(pick_reason(battler, slot, scores, ctx.preset, ctx.best, ctx.second)) do lines[#lines + 1] = l end
 	emit(lines, rows)
 end
 
@@ -324,7 +335,7 @@ end
 local SITES = {
 	{ "singles", snapshot, SITE_SINGLES }, { "doubles", snapshot, SITE_DOUBLES }, { "exit", on_exit, SITE_EXIT },
 	{ "preset", on_preset, SITE_PRESET }, { "switch", on_switch, SITE_SWITCH }, { "ko_switch", on_ko_switch, SITE_KO_SWITCH },
-	{ "choose_pokemon", on_choose_pokemon, SITE_CHOOSE_POKEMON }, { "scorer", on_scorer, SITE_SCORER, quiet = true },
+	{ "choose_pokemon", on_choose_pokemon, SITE_CHOOSE_POKEMON }, { "ko_picked", on_ko_picked, SITE_KO_PICKED, quiet = true }, { "scorer", on_scorer, SITE_SCORER, quiet = true },
 	{ "should_switch", on_should_switch, SITE_SHOULD_SWITCH, quiet = true },
 	{ "should_switch_ret", on_should_switch_ret, SITE_SHOULD_SWITCH_RET, quiet = true },
 }
