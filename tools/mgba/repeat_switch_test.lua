@@ -206,6 +206,83 @@ for spec in (os.getenv("RR_TEST_TRACE") or ""):gmatch("[^,]+") do
 end
 emu:setBreakpoint(on_scores, 0x090C83AC)
 emu:setBreakpoint(on_choice_entry, 0x090C82C0)
+-- RR_TEST_DMGCAL=1: at each move decision, log RR's cached AI damage next to the model's formula
+-- for both directions (AI -> you, you -> AI), to calibrate rr_model.damage.
+if os.getenv("RR_TEST_DMGCAL") == "1" then
+	emu:setBreakpoint(function()
+		if phase ~= "run" then return end
+		local b = emu:read8(0x02023BC4)
+		for _, pair in ipairs({ { b, b ~ 1 }, { b ~ 1, b } }) do
+			local atk, def = S.read_battle_mon(emu, pair[1]), S.read_battle_mon(emu, pair[2])
+			for i = 0, 3 do
+				if atk.moves[i] ~= 0 then
+					local mv = Model.move(emu, atk.moves[i], atk)
+					local c = Model.cached_damage(emu, pair[1], pair[2], i)
+					if mv.split ~= 2 and mv.power > 0 and c then
+						write(string.format("  dmgcal %s->%s %s cache %d model %d (lv%d atk %d/%d def %d/%d item %d/%d abil %d/%d hp %d/%d defhp %d)",
+							S.species_name(emu, atk.species), S.species_name(emu, def.species), mv.name, c,
+							Model.damage(emu, atk, def, mv, Model.KO_ROLL), atk.level, atk.attack, atk.sp_attack,
+							def.defense, def.sp_defense, atk.item, def.item, atk.ability, def.ability, atk.hp, atk.max_hp, def.hp))
+					end
+				end
+			end
+		end
+	end, 0x090C82C0)
+end
+-- Faint replacements: predict at OpponentHandleChoosePokemon entry (0x09068A28) when the AI's
+-- Pokemon has 0 HP, compare at 0x09068B0E (r4 = slot picked; RR's per-slot scores at gNewBS+0x860).
+-- The scorer runs at the start of the AI's turn (inside AI_TrySwitchOrUseItem); at a faint it only
+-- re-runs when the cached best is missing or fainted. So keep a start-of-turn prediction and a
+-- prediction at the faint, and compare with whichever state RR's table came from.
+local ko_pred, turn_pred, rescored
+local function predict_now(b)
+	local ok, p = pcall(Model.predict_switchin, emu, b, b ~ 1)
+	return ok and p or { error = tostring(p) }
+end
+emu:setBreakpoint(function()
+	if phase ~= "run" then return end
+	local b = emu:read8(0x02023BC4)
+	if b & 1 == 1 then turn_pred = predict_now(b) end
+end, 0x090C802C)
+emu:setBreakpoint(function() rescored = true end, 0x090D7168)
+emu:setBreakpoint(function()
+	if phase ~= "run" then return end
+	local b = emu:read8(0x02023BC4)
+	if b & 1 ~= 1 or emu:read16(S.BATTLE_MONS + b * S.BATTLE_MON_SIZE + 0x28) ~= 0 then ko_pred = nil; return end
+	ko_pred = predict_now(b)
+	rescored = false
+end, 0x09068A28)
+emu:setBreakpoint(function()
+	if phase ~= "run" or not ko_pred then return end
+	if not rescored and turn_pred then ko_pred = turn_pred; ko_pred.from = "start of turn" else ko_pred.from = "at the faint" end
+	local slot = emu:readRegister("r4") & 0xFF
+	local nbs = emu:read32(0x0203E038)
+	if ko_pred.error then write("  ko-switch model error: " .. ko_pred.error); ko_pred = nil; return end
+	local parts, match, total = {}, 0, 0
+	for i = 0, 5 do
+		local r = ko_pred.slots[i]
+		if r then
+			local actual = emu:read16(nbs + 0x860 + 0xC + i * 2)
+			if actual >= 0x8000 then actual = actual - 0x10000 end
+			local af = emu:read8(nbs + 0x878 + 6 + i)
+			total = total + 1
+			if actual == r.score then match = match + 1 end
+			local rr_maxd = 0
+			local per = {}
+			for k = 0, 3 do
+				local v = emu:read32(nbs + 0x3F0 + (((1 * 6 + i) * 4 + 0) * 4 + k) * 4)
+				per[#per + 1] = v == 0xFFFFFFFF and "-" or tostring(v)
+				if v ~= 0xFFFFFFFF and v > rr_maxd then rr_maxd = v end
+			end
+			r.name = r.name .. " rrdmg[" .. table.concat(per, "/") .. "] modeldmg[" .. (r.permoves or "") .. "]"
+			parts[#parts + 1] = string.format("%d %s %d%s%d (flags %02X/%02X, maxdmg model %d rr %d, your hp %d)", i, r.name, r.score,
+				actual == r.score and "=" or "!=", actual, r.flags, af, r.maxd or -1, rr_maxd, r.foe_hp or -1)
+		end
+	end
+	write(string.format("  ko-switch run %d (%s): picked slot %d, model gave it %d%%, scores %d/%d [%s]", run, ko_pred.from, slot,
+		math.floor((ko_pred.odds[slot] or 0) * 100 + 0.5), match, total, table.concat(parts, ", ")))
+	ko_pred = nil
+end, 0x09068B0E)
 -- RR_TEST_SEED_MAIN=turn: re-seed the main Random (0x03005000) as each AI decision starts
 -- (AI_TrySwitchOrUseItem 0x090C802C); the game re-seeds it at battle start, so a seed at load is lost.
 if os.getenv("RR_TEST_SEED_MAIN") == "turn" then

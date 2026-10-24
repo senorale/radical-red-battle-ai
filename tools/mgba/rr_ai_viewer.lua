@@ -346,10 +346,23 @@ local function on_switch()
 	emit(lines, rows)
 end
 
+local turn_switch_pred = {} -- per AI battler: switch-in prediction from the start of its turn
+local function predict_switchin(b)
+	if not model_ok or (emu:read32(0x02022B4C) & 1) ~= 0 or b & 1 ~= 1 then return nil end
+	local ok, p = pcall(Model.predict_switchin, emu, b, b ~ 1)
+	return ok and p or { error = tostring(p) }
+end
+-- The switch-in scorer runs at the start of the AI's turn (AI_TrySwitchOrUseItem 0x090C802C); at a faint
+-- it re-runs only if the cached best is missing or fainted. Predict at both points.
+local function on_turn_start()
+	local b = emu:read8(ACTIVE_BATTLER)
+	turn_switch_pred[b] = predict_switchin(b)
+end
 local function on_choose_pokemon()
 	local battler = emu:read8(ACTIVE_BATTLER)
 	local gbs = emu:read32(GBATTLE_STRUCT)
 	ko_ctx[battler] = { preset = emu:read8(gbs + 0x92 + (battler & 1)), rescored = false }
+	if emu:read16(BATTLE_MONS + battler * MON_SIZE + 0x28) == 0 then ko_ctx[battler].pred = predict_switchin(battler) end
 end
 local function on_ko_picked()
 	local ctx = ko_ctx[emu:read8(ACTIVE_BATTLER)]
@@ -373,9 +386,31 @@ local function on_ko_switch()
 		extra[#extra + 1] = ctx.rescored and "  scorer re-ran now (cached best was missing or fainted)"
 			or "  used the scorer's cached result from earlier this turn"
 	end
+	local pred = ctx.rescored and ctx.pred or turn_switch_pred[battler] or ctx.pred
+	if fainted and pred and pred.slots then
+		local best, bp = nil, -1
+		for sl, p in pairs(pred.odds) do if p > bp then best, bp = sl, p end end
+		local t = {}
+		for sl = 0, 5 do
+			local r = pred.slots[sl]
+			if r then t[#t + 1] = string.format("%d %s %d (%d%%)", sl, r.name, r.score, math.floor((pred.odds[sl] or 0) * 100 + 0.5)) end
+		end
+		extra[#extra + 1] = "  PREDICT: " .. table.concat(t, ", ")
+	elseif fainted and pred and pred.error then
+		extra[#extra + 1] = "  PREDICT error: " .. pred.error
+	end
 	local lines, scores, rows = report_switch(battler, slot,
 		fainted and "replacement after faint" or "sent out (forced switch)", extra)
 	for _, l in ipairs(pick_reason(battler, slot, scores, ctx.preset, ctx.best, ctx.second)) do lines[#lines + 1] = l end
+	if fainted and pred and pred.slots then
+		local match, total = 0, 0
+		for sl, r in pairs(pred.slots) do
+			total = total + 1
+			if scores[sl] == r.score then match = match + 1 end
+		end
+		lines[#lines + 1] = string.format("  MODEL: %d/%d switch-in scores right, gave the pick %d%%", match, total,
+			math.floor((pred.odds[slot] or 0) * 100 + 0.5))
+	end
 	emit(lines, rows)
 end
 
@@ -385,7 +420,10 @@ local LOG_PATH
 do
 	local src = debug.getinfo(1, "S").source
 	local dir = src:sub(1, 1) == "@" and src:sub(2):match("(.*/)") or nil
-	if dir and not RR_VIEWER_NO_LOG then LOG_PATH = dir .. "logs/viewer.log"; LOG_DIR = dir .. "logs/" end
+	if dir and not RR_VIEWER_NO_LOG then
+		local d = os.getenv("RR_VIEWER_LOG_DIR") or (dir .. "logs/") -- tests point this elsewhere
+		LOG_PATH = d .. "viewer.log"; LOG_DIR = d
+	end
 end
 log = function(msg)
 	local line = string.format("[rr-ai] %s", msg)
@@ -414,6 +452,7 @@ end
 local SITES = {
 	{ "singles", snapshot, SITE_SINGLES }, { "doubles", snapshot, SITE_DOUBLES }, { "exit", on_exit, SITE_EXIT },
 	{ "choice_entry", on_choice_entry, SITE_CHOICE_ENTRY, quiet = true },
+	{ "turn_start", on_turn_start, 0x090C802C, quiet = true },
 	{ "preset", on_preset, SITE_PRESET }, { "switch", on_switch, SITE_SWITCH }, { "ko_switch", on_ko_switch, SITE_KO_SWITCH },
 	{ "choose_pokemon", on_choose_pokemon, SITE_CHOOSE_POKEMON }, { "ko_picked", on_ko_picked, SITE_KO_PICKED, quiet = true }, { "scorer", on_scorer, SITE_SCORER, quiet = true },
 	{ "should_switch", on_should_switch, SITE_SHOULD_SWITCH, quiet = true },

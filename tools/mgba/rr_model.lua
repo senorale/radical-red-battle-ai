@@ -39,7 +39,7 @@ function M.move(mem, id, mon)
 	local mv = {
 		id = id, effect = mem:read8(a), power = mem:read8(a + 1), type = mem:read8(a + 2),
 		accuracy = mem:read8(a + 3), chance = mem:read8(a + 5), priority = s8(mem:read8(a + 7)),
-		split = mem:read8(a + 10), name = S.move_name(mem, id),
+		split = mem:read8(a + 10), flags = mem:read8(a + 8), name = S.move_name(mem, id),
 	}
 	-- Hidden Power (0xED): type from the IVs' low bits, x15/63, +1, +2 past Steel (0x090830A8).
 	if id == 0xED and mon then
@@ -89,20 +89,85 @@ function M.speed(mem, mon)
 	return v
 end
 
--- Damage estimate (approximation, see header). roll in percent.
+-- Item hold effect and parameter (item table 0x093C0000, 44 bytes: +0x12 effect, +0x13 parameter).
+M.ITEMS = 0x093C0000
+function M.hold(mem, item)
+	if item == 0 then return 0, 0 end
+	local a = M.ITEMS + item * 44
+	return mem:read8(a + 0x12), mem:read8(a + 0x13)
+end
+
+-- RR ability IDs (name table 0x090E32C0, tools/rom/ability_ids.py).
+local AB = { HUGE_POWER = 37, HUSTLE = 55, GUTS = 62, OVERGROW = 65, BLAZE = 66, TORRENT = 67, SWARM = 68,
+	DEFEATIST = 144, STRONG_JAW = 129, TECHNICIAN = 82, IRON_FIST = 93, TOUGH_CLAWS = 128, SHEER_FORCE = 92,
+	ADAPTABILITY = 88, MEGA_LAUNCHER = 127, SKILL_LINK = 79, THICK_FAT = 47, WATER_ABSORB = 11, STORM_DRAIN = 131,
+	DRY_SKIN = 98, VOLT_ABSORB = 10, LIGHTNING_ROD = 31, MOTOR_DRIVE = 80, FLASH_FIRE = 18, SAP_SIPPER = 113,
+	LEVITATE = 26, WONDER_GUARD = 25, FILTER = 263, SOLID_ROCK = 100, MULTISCALE = 81, FUR_COAT = 148, ICE_SCALES = 248 }
+local function has_word(name, words) for _, w in ipairs(words) do if name:find(w, 1, true) then return true end end return false end
+
+-- Damage estimate following RR's AI damage (0x09087080 -> 0x09085A10, then x93/100): the main
+-- stat, ability, item, weather and type factors; not every special case. roll in percent.
 function M.damage(mem, atk, def, mv, roll)
 	if mv.split == 2 or mv.power == 0 then return 0 end
+	local t = mv.type
+	-- Immunities from abilities.
+	local da = def.ability
+	if (t == 11 and (da == AB.WATER_ABSORB or da == AB.STORM_DRAIN or da == AB.DRY_SKIN)) or
+		(t == 13 and (da == AB.VOLT_ABSORB or da == AB.LIGHTNING_ROD or da == AB.MOTOR_DRIVE)) or
+		(t == 10 and da == AB.FLASH_FIRE) or (t == 12 and da == AB.SAP_SIPPER) or (t == 4 and da == AB.LEVITATE) then
+		return 0
+	end
+	local eff = M.effectiveness(mem, t, def)
+	if eff == 0 or (da == AB.WONDER_GUARD and eff <= 1) then return 0 end
+	local power = mv.power
+	local aa = atk.ability
+	if aa == AB.TECHNICIAN and power <= 60 then power = power * 3 // 2 end
+	if aa == AB.STRONG_JAW and has_word(mv.name, { "Bite", "Fang", "Crunch", "Jaw" }) then power = power * 3 // 2 end
+	if aa == AB.IRON_FIST and mv.name:find("Punch", 1, true) then power = power * 6 // 5 end
+	if aa == AB.MEGA_LAUNCHER and has_word(mv.name, { "Pulse", "Aura Sphere" }) then power = power * 3 // 2 end
+	if aa == AB.TOUGH_CLAWS and mv.flags and mv.flags & 1 ~= 0 then power = power * 13 // 10 end
+	if aa == AB.SHEER_FORCE and mv.chance > 0 then power = power * 13 // 10 end
+	local he, hp_ = M.hold(mem, atk.item)
+	if he == 0x81 and hp_ == t then power = power * 6 // 5 end -- type-boosting item
 	local a, d
+	local def_item_e = M.hold(mem, def.item)
 	if mv.split == 0 then
 		a, d = staged(atk.attack, atk.stages.atk - 6), staged(def.defense, def.stages.def - 6)
+		if aa == AB.HUGE_POWER then a = a * 2 end
+		if aa == AB.HUSTLE then a = a * 3 // 2 end
+		if aa == AB.GUTS and atk.status1 ~= 0 then a = a * 3 // 2 end
+		if da == AB.FUR_COAT then d = d * 2 end
 	else
 		a, d = staged(atk.sp_attack, atk.stages.spa - 6), staged(def.sp_defense, def.stages.spd - 6)
+		local w = mem:read16(M.WEATHER)
+		if w & 0x18 ~= 0 and (def.type1 == 5 or def.type2 == 5 or def.type3 == 5) then d = d * 3 // 2 end
 	end
+	if def.item == 700 then d = d * 3 // 2 end -- Eviolite (assumes it can still evolve)
+	if aa == AB.DEFEATIST and atk.hp * 2 <= atk.max_hp then a = a // 2 end
+	if atk.hp * 3 <= atk.max_hp and ((aa == AB.OVERGROW and t == 12) or (aa == AB.BLAZE and t == 10) or
+		(aa == AB.TORRENT and t == 11) or (aa == AB.SWARM and t == 6)) then a = a * 3 // 2 end
+	if da == AB.THICK_FAT and (t == 10 or t == 15) then a = a // 2 end
 	if d < 1 then d = 1 end
-	local base = ((2 * atk.level) // 5 + 2) * mv.power * a // d // 50 + 2
-	if mv.type == atk.type1 or mv.type == atk.type2 or mv.type == atk.type3 then base = base * 3 // 2 end
-	base = math.floor(base * M.effectiveness(mem, mv.type, def))
-	if mv.effect == 0x1D then base = base * 3 end -- multi-hit (2-5 hits): 3 assumed, not checked in RR code
+	local base = ((2 * atk.level) // 5 + 2) * power * a // d // 50 + 2
+	local w = mem:read16(M.WEATHER)
+	if w & 0x07 ~= 0 then -- rain
+		if t == 11 then base = base * 3 // 2 elseif t == 10 then base = base // 2 end
+	elseif w & 0x60 ~= 0 then -- sun
+		if t == 10 then base = base * 3 // 2 elseif t == 11 then base = base // 2 end
+	end
+	if mv.type == atk.type1 or mv.type == atk.type2 or mv.type == atk.type3 then
+		base = aa == AB.ADAPTABILITY and base * 2 or base * 3 // 2
+	end
+	base = math.floor(base * eff)
+	if eff > 1 then
+		local de, dp = M.hold(mem, def.item)
+		if de == 0x5F and dp == t then base = base // 2 end -- resist berry
+		if da == AB.FILTER or da == AB.SOLID_ROCK then base = base * 3 // 4 end
+	end
+	if da == AB.MULTISCALE and def.hp == def.max_hp then base = base // 2 end
+	if da == AB.ICE_SCALES and mv.split == 1 then base = base // 2 end
+	if mv.split == 0 and atk.status1 & 0x10 ~= 0 and aa ~= AB.GUTS then base = base // 2 end -- burn
+	if mv.effect == 0x1D then base = base * (aa == AB.SKILL_LINK and 5 or 2) end -- multi-hit: RR assumes 2 hits
 	return base * roll // 100
 end
 
@@ -354,6 +419,163 @@ function M.predict(mem, ai_b, target_b, opts)
 	out.strongest_model = strongest and mvs[strongest].id or 0
 	out.strongest_cache = M.cached_strongest(mem, ai_b, target_b) or 0
 	out.foe_pred, out.foe_prio = foe_pred, foe_prio
+	return out
+end
+
+-- ===== Switch-in prediction (faint replacements), RR's scorer 0x090D7168 =====
+-- Species base stats 0x097B98EC, 28 bytes: +0 HP Atk Def Spe SpA SpD, +6 type1, +7 type2,
+-- +0x16 ability 1, +0x17 ability 2, +0x1A hidden ability (layout checked on Tepig, Poochyena, Cacturne).
+-- Party ability: hidden if the IV word's top bit is set, else ability 2 when the personality is odd
+-- and it exists, else ability 1 (CFRU's rule; not checked in RR code).
+M.BASE_STATS, M.BASE_SIZE = 0x097B98EC, 28
+M.SWITCH_ROLL = 96 -- percent; damage roll assumed for switch-ins (docs/ai-guide.md, not verified)
+
+function M.party_battle_mon(mem, pm)
+	local b = M.BASE_STATS + pm.species * M.BASE_SIZE
+	local a1, a2, ah = mem:read8(b + 0x16), mem:read8(b + 0x17), mem:read8(b + 0x1A)
+	local ability = a1
+	if pm.hidden_ability == 1 and ah ~= 0 then ability = ah
+	elseif pm.personality & 1 == 1 and a2 ~= 0 then ability = a2 end
+	local st = {}
+	for _, k in ipairs(S.STAGE_NAMES) do st[k] = 6 end
+	return { species = pm.species, level = pm.level, hp = pm.hp, max_hp = pm.max_hp,
+		attack = pm.attack, defense = pm.defense, speed = pm.speed, sp_attack = pm.sp_attack, sp_defense = pm.sp_defense,
+		type1 = mem:read8(b + 6), type2 = mem:read8(b + 7), type3 = 0x14, ability = ability, status1 = pm.status1, item = pm.item,
+		moves = pm.moves, ivs = pm.ivs, stages = st, battler = 1 }
+end
+
+-- Scores one candidate against the foe battle mon. Mirrors the RR scorer's rules
+-- (docs/verified.md "switch-in" notes and the decompile lines cited there), with the model's damage.
+-- RR's bench damage cache (0x090DA8A4): u32 at gNewBS + 0x3F0 + (((side*6 + slot)*4 + foe)*4 + move)*4.
+-- It is only reset to -1 (not computed) by ClearCachedAIData 0x090C8BA4, which outside Hardcore's re-pick
+-- never runs, so it stays 0 and RR treats bench Pokemon as dealing no damage (seen in game: every
+-- lookup read 0). The model uses the cached value when it is not -1.
+local function bench_damage(mem, side, slot, foe_b, k)
+	local v = mem:read32(mem:read32(M.GNEWBS) + 0x3F0 + (((side * 6 + slot) * 4 + foe_b) * 4 + k) * 4)
+	if v == 0xFFFFFFFF then return nil end
+	return v
+end
+
+local function score_candidate(mem, cand, foe, side, slot, foe_b)
+	local score, flags = 0, 0
+	cand.battler = side
+	local cspd, fspd = M.speed(mem, cand), M.speed(mem, foe)
+	if cspd >= fspd then score = score + 14; flags = flags | 0x40 end
+	local ko, two, usable, prio_ko = false, false, false, false
+	for i = 0, 3 do
+		local id = cand.moves[i]
+		if id ~= 0 then
+			local mv = M.move(mem, id, cand)
+			if mv.split ~= 2 and mv.power > 0 then
+				usable = true
+				local d = bench_damage(mem, side, slot, foe_b, i) or M.damage(mem, cand, foe, mv, M.SWITCH_ROLL)
+				if d >= foe.hp then ko = true; if mv.priority > 0 then prio_ko = true end end
+				if d * 2 >= foe.hp then two = true end
+			end
+		end
+	end
+	if ko then
+		score = score + 31; flags = flags | 1
+		if prio_ko then
+			score = score + 8; flags = flags | 4
+			if flags & 0x40 == 0 then score = score + 14; flags = flags | 0x40 end
+		end
+	elseif not usable then
+		return -1, flags
+	elseif two then
+		score = score + 2; flags = flags | 0x10
+	end
+	local faints, weak, normal, phys, spec = false, false, 0, false, false
+	for i = 0, 3 do
+		local id = foe.moves[i]
+		if id ~= 0 then
+			local mv = M.move(mem, id, foe)
+			if mv.split ~= 2 and mv.power > 0 then
+				if mv.split == 0 then phys = true else spec = true end
+				local d = M.damage(mem, foe, cand, mv, M.SWITCH_ROLL)
+				if d >= cand.hp then faints = true
+				elseif d * 2 >= cand.hp then weak = true
+				elseif d * 3 >= cand.hp then normal = normal + 1 end
+			end
+		end
+	end
+	if faints then
+		if flags & 0x40 == 0 then
+			flags = flags | 0x80
+			score = score >= 39 and score - 39 or 0
+		elseif flags & 1 == 0 then
+			score = score >= 15 and score - 15 or 0
+		else
+			score = score >= 1 and score - 1 or 0
+		end
+	elseif weak then
+		score = score >= 1 and score - 1 or 0
+	elseif normal == 0 then
+		score = score + 17; flags = flags | 2
+	else
+		local fa = staged(foe.attack, foe.stages.atk - 6)
+		local fs = staged(foe.sp_attack, foe.stages.spa - 6)
+		if not ((phys and cand.defense <= fa) or (spec and cand.sp_defense <= fs)) then
+			score = score + 2; flags = flags | 8
+		end
+	end
+	return score, flags
+end
+
+-- Predict which party slot replaces battler ai_b against foe battler foe_b.
+-- Returns { slots = { [slot] = { name, score, flags } }, odds = { [slot] = p } }.
+function M.predict_switchin(mem, ai_b, foe_b)
+	local side = ai_b & 1
+	local party = S.read_party(mem, side == 1 and "enemy" or "player")
+	local foe = S.read_battle_mon(mem, foe_b)
+	local on_field = mem:read16(S.BATTLER_PARTY_INDEXES + ai_b * 2)
+	local out = { slots = {}, odds = {} }
+	local order = {}
+	for slot = 0, 5 do
+		local pm = party[slot]
+		if pm and pm.hp > 0 and pm.is_egg == 0 and slot ~= on_field and (pm.status1 & 7 == 0 or pm.status1 == 1) then
+			local cand = M.party_battle_mon(mem, pm)
+			local sc, fl = score_candidate(mem, cand, foe, side, slot, foe_b)
+			local maxd, per = 0, {}
+			for i = 0, 3 do
+				local id = cand.moves[i]
+				if id ~= 0 then
+					local mv = M.move(mem, id, cand)
+					local d = M.damage(mem, cand, foe, mv, M.SWITCH_ROLL)
+					per[#per + 1] = tostring(d)
+					if d > maxd then maxd = d end
+				end
+			end
+			out.slots[slot] = { name = S.species_name(mem, pm.species), score = sc, flags = fl, maxd = maxd, foe_hp = foe.hp,
+				permoves = table.concat(per, "/") }
+			order[#order + 1] = slot
+		end
+	end
+	-- Walk in party order: a higher score takes over; an equal score takes over on a 50% flip when
+	-- neither "faints" or both do; one that does not faint beats one that does on a tie.
+	local dist = {}
+	for _, slot in ipairs(order) do
+		local r = out.slots[slot]
+		if r.score >= 0 then
+			if next(dist) == nil then dist[slot] = 1
+			else
+				local nd = {}
+				for b, p in pairs(dist) do
+					local rb = out.slots[b]
+					if r.score > rb.score then nd[slot] = (nd[slot] or 0) + p
+					elseif r.score < rb.score then nd[b] = (nd[b] or 0) + p
+					else
+						local fb, fr = rb.flags & 0x80 ~= 0, r.flags & 0x80 ~= 0
+						if fb and not fr then nd[slot] = (nd[slot] or 0) + p
+						elseif fr and not fb then nd[b] = (nd[b] or 0) + p
+						else nd[slot] = (nd[slot] or 0) + p / 2; nd[b] = (nd[b] or 0) + p / 2 end
+					end
+				end
+				dist = nd
+			end
+		end
+	end
+	out.odds = dist
 	return out
 end
 
