@@ -63,7 +63,7 @@ How rules 2 to 6 combine in one real position (test state `rr.ss6`, start of the
 | Order | Party member | Switch-in score | Absorbs Water? |
 |---|---|---|---|
 | 1st | Cacnea (best score: resists all your moves, outspeeds) | 31 | no, rejected |
-| 2nd | Lileep (second best: resists all your moves) | 17 | yes (Storm Drain), **switches in** |
+| 2nd | Lileep (second best: resists all your moves) | 17 | yes, accepted by the ability check (Lileep's Water-absorbing ability is Storm Drain; not confirmed on screen), **switches in** |
 
 The scores do not decide here; the first Pokemon (in that order) that absorbs Water wins. This step had no further randomness: every run that passed the 25% roll switched to Lileep.
 
