@@ -1,8 +1,8 @@
 # Progress
 
-Where the research stands, so a new session can pick up without re-deriving it. Last updated 2026-10-24.
+Where the research stands, so a new session can pick up without re-deriving it. Last updated 2026-10-25.
 
-**Current task:** improving the live AI predictor from the user's play. Start with `HANDOFF.md`, then `docs/verified.md`.
+**Current task:** understanding and predicting the AI in the user's live doubles fights (switch-ins predicted; doubles move choice decoded, model not built yet). Start with `HANDOFF.md`, then `docs/verified.md`.
 
 ## Goal
 
@@ -32,9 +32,11 @@ Understand how Radical Red 4.1's enemy AI chooses moves, switches and switch-ins
 
 Validate after any tooling change: test on `09060000`-`090E8000` (and `09000000`-`09060000` for hook code) into `tools/ghidra/build/tests/`, diff against the last full run, then `python3 -I tools/ghidra/validate_full.py tools/ghidra/build <full dir> <region test dir>`.
 
-### mGBA AI viewer (working in game, 2026-10-24)
+### mGBA AI viewer (working in game, updated 2026-10-25)
 
 `tools/mgba/rr_ai_viewer.lua` (mGBA 0.11+ development build, breakpoint API) runs live in the user's game. It prints every enemy move decision (each move's score per target, ties, chosen move/target) and every enemy switch: voluntary (which ShouldSwitch check fired, via breakpoints on the 14 check blocks), forced or after a faint, with why that slot was picked and the switch-in scores and flags of every party slot (RR stores them in `gNewBS +0x860/+0x878`). It re-installs its breakpoints on start/reset and logs every hook hit to `tools/mgba/logs/viewer.log`. Wild Pokemon pick random moves (`OpponentHandleChooseMove` `0x09068418`) and never show.
+
+Since 2026-10-25 it also logs, per decision and per target, HP, RR's damage both ways and RR's KO verdicts; switch blocks start with the field status and carry the switch-in prediction with a reason per slot (singles and doubles). `tools/mgba/watch_switchins.py` follows the log and prints only switch-ins.
 
 `tools/mgba/run_repeat_test.sh` replays a savestate N times at uncapped speed with a fresh `Random2` seed per run, records several turns per run (`RR_TEST_DECISIONS`), sends out the next Pokemon after a faint, and can log any register at any address (`RR_TEST_TRACE`). `summarize_trace.py` turns a traced run into a per-turn list of score changes and the rule behind each. This is how every rule in `docs/verified.md` was confirmed.
 
@@ -48,7 +50,7 @@ Tried compiling CFRU's AI source with CFRU's flags and matching it byte for byte
 
 ### Findings so far
 
-Verified in game (details and evidence in `docs/verified.md`): the AI picks its action at turn start before the player; the RR-only 25% no-switch roll; `Random2` is a fixed formula (same savestate, same decision); absorb switch; random move ties; the Speed-drop +3 coin (RR adds the coin); KO / slow-KO / strongest-move bonuses; roles (set from the AI's own moves, recomputed each turn); -15 for moves with no effect.
+Verified in game (details and evidence in `docs/verified.md`): the AI picks its action at turn start before the player; the RR-only 25% no-switch roll; `Random2` is a fixed formula (same savestate, same decision); absorb switch; random move ties; the Speed-drop +3 coin (RR adds the coin); KO / slow-KO / strongest-move bonuses; roles (set from the AI's own moves, recomputed each turn); -15 for moves with no effect. Added 2026-10-24/25: switch-ins never count bench damage (rule 14, shown by resetting the cache live); Last Resort -10 (15); the U-turn pivot check (16); doubles move selection D1-D6 (Speed-order decisions, doubles damage points and role table, partner-handled targets, -30 no effect, Fake Out by role and threat, the target tie-break with its 25% roll); doubles switch-ins S1-S3 (per-foe sum, type-only defense).
 
 Code findings:
 
@@ -78,10 +80,11 @@ Each of these produced wrong decompiles before it was fixed; they explain why ol
 
 ## Next steps
 
-1. **Predictor v1 is built** (`tools/mgba/rr_model.lua`, 2026-10-24): move scores in singles, printed as PREDICT before ACTUAL in the viewer, logged to `tools/mgba/logs/decisions.jsonl`. On the `rr.ss6` battle (16 decisions) every move score matched. Next: test on new battles; model the switch checks (only the 25% roll so far), more status moves, the good-idea-to-boost check exactly, doubles. It reads RR's damage, strongest-move and predicted-move caches as inputs; the strongest-move cache can lag one Pokemon behind after a faint replacement (seen in game).
-2. Open questions from the traces: where RR resets the role cache each turn (not `ClearCachedAIData` `0x090C8BA4`, whose only caller is the Hardcore re-pick `0x090C8F04`); why Stockpile got no +5 against Mightyena; why Hidden Power lost its +2 against a 3 HP target; whether the main `Random` advances every frame.
-3. Doc audit: move the remaining [ROM]/[CFRU] claims in `docs/` onto RR addresses.
-4. Later: route encounters are data tables, not code.
+1. **Doubles move-choice model** (`tools/mgba/rr_model.lua`) from `docs/verified.md` D1-D6, then compare it with the user's doubles logs (every target's scores, HP, damage both ways are logged).
+2. **Singles status moves** still unscored (list in `HANDOFF.md`).
+3. **Voluntary switch prediction** (14 ShouldSwitch checks are logged, not predicted).
+4. Open questions: where RR doubles the doubles "avoid" penalties (-30 for no effect); doubles role assignment (Perrserker = Utility); where the bench damage cache gets its zeros; Ground into airborne = 0; Iron Head 109 on a non-KO (2026-10-24, frame 26462).
+5. Later: route encounters are data tables, not code.
 
 ## Related
 
