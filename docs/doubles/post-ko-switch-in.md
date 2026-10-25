@@ -1,44 +1,46 @@
 # Doubles: Post-KO Switch-In
 
-How the Radical Red 4.1 AI picks which Pokemon to send in during a double battle. There is no separate doubles function: the singles scoring (`0x090D7168`, called from `OpponentHandleChoosePokemon` at `0x09068A28`) runs with doubles-only branches, which change the result a lot. For single battles see `../singles/post-ko-switch-in.md`. Read `../ai-guide.md` first for the tags and damage roll.
+How the Radical Red 4.1 AI picks which Pokemon to send in during a double battle. There is no separate doubles function: the singles scoring (`0x090D7168`, called from `OpponentHandleChoosePokemon` at `0x09068A28`) runs with doubles-only branches, which change the result a lot. For single battles see `../singles/post-ko-switch-in.md`. Read `../ai-guide.md` first for the tags.
 
-## 1. Scoring [ROM]
+The verified rules, with evidence, are in `../verified.md` ("Doubles: post-KO switch-in", S1 to S3). The doubles switch-in model in `tools/mgba/rr_model.lua` follows them and matched RR's score for every party slot in all 19 logged doubles switch-ins.
+
+## 1. Scoring [VERIFIED]
 
 Each healthy benched Pokemon is scored **against each of your active Pokemon separately**, and the scores are **added together**. Highest total comes in.
 
-| Trait (per Pokemon of yours) | Points |
-|---|---|
-| Can KO it | +31 |
-| Outspeeds it (or has a priority move that KOs) | +14 |
-| Revenge kill (priority KO, Moxie, trapping ability, Pursuit/Fell Stinger KO) | +8 |
-| Resists or is immune to all its damaging moves | +17 |
-| Walls it | +2 |
-| Can 2HKO it (only checked if it cannot KO) | +2 |
-| It would KO the switch-in, or has a super-effective move | **-1** |
+| Trait (per Pokemon of yours) | Points | In practice |
+|---|---|---|
+| Outspeeds it (Speed ties count; uses the AI's effective Speed: stages, paralysis, weather abilities) | +14 | Live |
+| Resists or is immune to all its damaging moves | +17 | Live |
+| Walls it (no super-effective move, some neutral hit, and its Def/SpD strictly above your boosted Atk/SpA) | +2 | Live |
+| It has a super-effective damaging move (or, on your last Pokemon, would KO the switch-in) | **-1** | Live |
+| Can KO it | +31 | **Never fires** (rule 14: bench damage reads as 0) |
+| Revenge kill | +8 | **Never fires** |
+| Can 2HKO it | +2 | **Never fires** |
 
-Perfect score is 140 (70 against each of your two Pokemon). Examples: outspeeding both is +28, KOing both is +62.
+The score never goes below 0. Outspeeding both of your Pokemon is +28, resisting everything both have is +34.
 
-Compared with singles, the big difference is the last row: a switch-in you would KO loses only 1 point, not -39 or -15.
+Examples from logged battles: Boltund 30 (+14 +14 faster than Emboar and Azumarill, +2 walls Azumarill); Boltund 27 (+14 +14, -1 for Gyarados' Bulldoze); Perrserker 16 (+14 Speed tie 52 vs 52 with Azumarill, +2 walls Azumarill, -1 for Emboar's Heat Crash); Granbull 0 (slower than both, hit super-effectively).
 
-## 2. How it judges each trait [ROM]
+## 2. How it judges each trait
 
-- **Its offense uses real damage calcs** with a 96% roll (the 12th of 16): "can KO" and "can 2HKO" are real calculations.
-- **Your offense uses only the type chart**, unless you have just one Pokemon left in your whole party (then it uses damage calcs, but a KO still only costs 1 point). "Weak" means you have a super-effective damaging move against it. "Resists all" means you have no neutral or super-effective damaging moves against it.
-- **Walls** still compares its Defense/Sp. Def against your stat-stage-boosted Attack/Sp. Atk (strictly greater), checked against each of your Pokemon.
-- **Hazards count.** A Pokemon that would faint to hazards is never sent in.
-- **Asleep Pokemon** are skipped unless they wake up this turn.
+- **Its offense: never counted** [VERIFIED]. Same cache as singles (`../verified.md` rule 14); every doubles switch-in logged `0/0/0/0` against both foes.
+- **Your offense: type chart only** [VERIFIED], while your party has more than one usable Pokemon. "Super-effective" means any of your damaging moves hits it super-effectively; "resists all" means none of them hits it neutrally or better.
+- **Your last Pokemon** [ROM]: when your whole party is down to one usable Pokemon (`0x09073B6A`), it uses damage calcs instead, but a switch-in you would KO still loses only 1 point. Not seen in a logged battle yet.
+- **Hazards count** [ROM]. A Pokemon that would faint to hazards is never sent in.
+- **Asleep Pokemon** are skipped unless they wake up this turn [ROM].
 
-## 3. Tie-breaks, randomness and overrides [ROM]
+## 3. Tie-breaks, randomness and overrides
 
-- **Ties are always a coin flip.** Singles prefers the tied Pokemon that survives; doubles does not track that, so every tie is 50/50. The flip runs down the party in order, so with three tied the last one is favored (25% / 25% / 50%).
-- **Other randomness:** none in the scoring itself. A move with a 50%+ crit chance gets a coin flip on whether the crit is counted, which can change "can KO".
-- **Both AI Pokemon faint at once:** the first replacement takes the top pick, the second takes the runner-up.
-- **Hazard removal:** if hazards are on its side, a Rapid Spin/Defog user that survives (or a grounded Poison type vs Toxic Spikes) is sent in instead (scored 142), unless the top pick already outspeeds and KOs or resists everything.
+- **Ties are a coin flip** [VERIFIED]: the scorer walks the party in order and a later equal score takes over on a 50% `Random2` flip, so with three tied the last one is favored (25% / 25% / 50%). With everyone at 0 the pick is a flip between the healthy ones.
+- **Both AI Pokemon faint at once** [ROM]: the first replacement takes the top pick; the slot it picked is excluded for the second (`gBattleStruct+0x5C+battler`).
+- **Hazard removal** [ROM]: if hazards are on its side, a Rapid Spin/Defog user that survives (or a grounded Poison type vs Toxic Spikes) is sent in instead, unless the top pick already outspeeds and KOs or resists everything.
 - **Not affected by the 25% switch skip.** That skip only applies to voluntary switching.
 
 ## 4. Practical takeaways
 
-- **It sends in whatever outspeeds and hits your pair hardest.** Speed and KO power against both of your Pokemon dominate.
+- **Speed against both of your Pokemon decides most replacements.** Being faster than both is worth +28; nothing else except "resists all" comes close.
+- **It ignores how hard the switch-in hits you.** A slow Pokemon that would OHKO your pair scores 0.
+- **Typing matters only defensively.** Resisting all of one of your Pokemon's attacks is +17, walling it +2, being hit super-effectively -1. The -1 almost never changes the pick except in ties.
 - **It barely cares if its switch-in survives.** Expect replacements that walk into your super-effective spread moves.
-- **Type chart, not damage, for your attacks.** A neutral hit that would KO it is not counted against it at all.
-- **Ties are common and random.** Two similar options are a straight coin flip.
+- **Ties are common and random.** Two slow Pokemon that both get hit super-effectively both score 0.

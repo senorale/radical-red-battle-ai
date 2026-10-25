@@ -37,7 +37,9 @@ A few highlights:
 
 - Every trainer uses the full smart AI. There are no "dumb" route trainers.
 - Trainers never use items, and on 25% of turns the AI does not consider switching at all.
-- The AI assumes the 9th of the 16 damage rolls (93%) when judging KOs, and the 12th (96%) for switch-ins.
+- The AI assumes the 9th of the 16 damage rolls (93%) when judging KOs.
+- **Switch-ins never count their own damage** (verified in game): the AI picks replacements on Speed and on how well they take your hits, never on how hard they hit you. In doubles, being faster than both of your Pokemon is worth the most.
+- In doubles, ties between targets are broken by KOs (counting the partner's hit), then a 25% roll for the harder-hit target, else a coin flip (verified).
 - Difficulty modes share the same AI. The only difference is Hardcore's anti-switch rule.
 
 ## How this was compiled
@@ -69,7 +71,7 @@ Scripts for mGBA that stop the game inside the AI's own functions and print what
 3. Start it with the viewer: `tools/mgba/run_viewer.sh` (macOS, mGBA in `/Applications`), or open the ROM in mGBA and load `tools/mgba/rr_ai_viewer.lua` with Tools > Scripting > File > Load script.
 4. Open Tools > Scripting and the "RR AI scores" tab. A block appears each time an enemy trainer Pokemon decides (wild Pokemon pick random moves and do not show).
 
-In single battles the viewer also shows a PREDICT block from `tools/mgba/rr_model.lua` above the real scores, and a MODEL line saying how many scores it got right; every decision is logged to `tools/mgba/logs/decisions.jsonl`.
+In single battles the viewer also shows a PREDICT block from `tools/mgba/rr_model.lua` above the real scores, and a MODEL line saying how many scores it got right. Switch-ins after a faint get a prediction in singles and doubles, with the reason for each party slot's score and the battle status at that moment. Every decision is logged to `tools/mgba/logs/decisions.jsonl` with HP and RR's own damage and KO verdicts for every target; `python3 -I tools/mgba/watch_switchins.py` follows the log and prints only the switch-ins.
 
 To replay one position many times and see how often each decision happens (the AI's randomness is seeded per run), make an mGBA savestate just before a trainer battle and run `tools/mgba/run_repeat_test.sh <state file> 50 random`. Options and the trace mode are in [`tools/README.md`](tools/README.md).
 

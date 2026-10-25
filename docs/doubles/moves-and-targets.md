@@ -2,7 +2,7 @@
 
 How the Radical Red 4.1 AI picks moves and targets in double battles. Read `../ai-guide.md` first for the tags and damage roll.
 
-Doubles uses different move scoring from singles. These rules apply whenever both sides are not down to one Pokemon each. Once it is 1 vs 1, the singles rules in `../singles/move-or-switch.md` apply. All of this was checked in the ROM and matches CFRU.
+Doubles uses different move scoring from singles. These rules apply whenever both sides are not down to one Pokemon each. Once it is 1 vs 1, the singles rules in `../singles/move-or-switch.md` apply. All of this was checked in the ROM and matches CFRU. The parts tested in game, with evidence, are in `../verified.md` ("Doubles: move selection", D1 to D6).
 
 ## Step 1: each AI Pokemon gets a role [ROM]
 
@@ -29,7 +29,7 @@ Details from the ROM:
 - **Rototiller counts as a boost for any Grass type**, with no grounded check (older CFRU behavior).
 - **Doubles roles apply only while both of your Pokemon or its own partner are alive.** Otherwise it uses the singles roles.
 
-## Step 2: only ONE damaging move per target gets a damage bonus [ROM]
+## Step 2: only ONE damaging move per target gets a damage bonus [VERIFIED, D2]
 
 For each of your Pokemon it might target, the AI picks a single "best damaging move" by adding up:
 
@@ -51,7 +51,9 @@ Spread moves add these points for both foes, so a spread move that hits both sco
 
 Fake Out, Protect, Tailwind, Trick Room, redirection, sleep, Will-O-Wisp, screens, Helping Hand, healing its partner and so on each get fixed role bonuses from the same ladders. For support roles many of these outrank attacking, so they often pick status moves even when they could hit hard.
 
-## Step 4: picking the target [ROM]
+## Step 4: picking the target [VERIFIED for attacker roles, D6]
+
+Seen in game: Mr. Mime's two tied targets went 68% / 32% toward the harder-hit one, flipped to 40% / 60% when a Payapa Berry lowered that damage, and became 100% when the partner's Fake Out plus its own hit would KO. Traced: the 25% roll and the damage % decide exactly as below.
 
 1. It scores its moves against each living Pokemon separately (both of yours, plus its own partner) and keeps the best move for each. **If several moves tie, it picks one at random.**
 2. It never targets its own partner unless that score is above 100 (for example, to trigger the partner's absorb ability or Justified).
@@ -61,9 +63,9 @@ Fake Out, Protect, Tailwind, Trick Room, redirection, sleep, Will-O-Wisp, screen
 4. It will not waste a status move on a target its partner is about to KO first.
 5. If its pick lands on its own partner with a negative score, it retargets one of your Pokemon.
 
-## Step 5: partner coordination [ROM]
+## Step 5: partner coordination [VERIFIED for the first two points, D1 and D3]
 
-The AI processes its two Pokemon in speed order, so the slower one knows what the faster one chose:
+The AI processes its two Pokemon in speed order, so the slower one knows what the faster one chose (seen: Boltund 110 before Ambipom 105 before Mr. Mime 93):
 
 - A target the partner is about to KO counts as "already handled", so it looks elsewhere.
 - If the partner is about to KO both foes with a spread move, it does too, unless the partner is slower than a foe.
@@ -84,12 +86,12 @@ The AI processes its two Pokemon in speed order, so the slower one knows what th
 
 | Rule | Detail | Source |
 |---|---|---|
-| Fake Out | Strong preference on turn 1, aimed at the more threatening target. | [CFRU] |
+| Fake Out | First turn only: +15 for All-Out/Setup Attackers, +17 Trick Room/team support, +19 Utility/Phazer; -1 against the less threatening foe (the one whose partner can KO more of the AI's Pokemon), so it goes to the bigger threat. Never two Fake Outs on the same foe. After the first turn it scores 80 (-20). Seen: Ambipom 115 vs 114, Fake Out into Mightyena in 100 of 100 runs; Perrserker 119 (Utility). `0x090C67A4`, `../verified.md` D5. | [VERIFIED] |
 | Protect | Second Protect in a row has no penalty in Radical Red; third gets -10. | [ROM] |
-| Penalties | All "avoid" penalties from `../singles/move-or-switch.md` are doubled. | [CFRU] |
+| Penalties | All "avoid" penalties from `../singles/move-or-switch.md` are doubled. Seen: moves with no effect score 70 (-30, singles -15), into an absorbing ability 60 (-40). | [CFRU], -30 [OBSERVED] |
 | Thaw | A frozen AI Pokemon with a thawing move gets +20. | [ROM] |
 | Switching | Most switch rules in `../singles/move-or-switch.md` are singles-only. In doubles it mainly switches to absorb your predicted attack, when it has only bad moves left against both foes, or for Yawn/asleep/residual damage. | [CFRU] |
-| Replacements after a KO | Scored against both of your Pokemon and summed. Its offense uses damage calcs; your offense uses only the type chart; a switch-in you would KO loses just 1 point. Details in `post-ko-switch-in.md`. | [ROM] |
+| Replacements after a KO | Scored against both of your Pokemon and summed. Its own damage never counts (bench damage reads as 0, `../verified.md` rule 14); your offense uses only the type chart; Speed against each of your Pokemon is +14. Details in `post-ko-switch-in.md`. | [VERIFIED] |
 
 ## Priority ladders
 

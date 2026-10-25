@@ -41,9 +41,10 @@ Everything labeled "Radical Red" in this table is [ROM]. The base conditions (wh
 | **Counter / Mirror Coat** | Radical Red adds a flat 50% chance of -10 every turn, so it uses them about half as often as it otherwise would. Never when you are predicted to use a status move. |
 | **Sucker Punch** | Radical Red rule: only when it predicts you will attack and it would go first. -10 if it predicts a status move from you; 50% penalty if it predicts you switch. |
 | **Explosion** | Only when no other move KOs and staying in does not win. Radical Red adds: never into a Protect you did not use last turn, never if you know Fly/Dig/etc. Never with Damp on field. |
-| **U-turn / Volt Switch / Parting Shot** | Used to pivot into a better matchup, break Sash/Sturdy/Multiscale, or escape bad stat drops. Penalized (-9) when pivoting is a bad idea. |
+| **U-turn / Volt Switch / Flip Turn** | [VERIFIED, `../verified.md` rule 16] RR's ShouldPivot (`0x090C5704`) gives one of: bad time to pivot **-9** (and the strongest-move +2 moves to its next best attack); good time to pivot, a bonus by role (+3 pure attacker or hazard setter, +9 setup/stall/Baton Pass roles, +7 cleric/screens, +4 phazer); pivot now (set by the switch logic) +9; no change when it has nothing to switch to. It pivots when you are predicted to switch, to break Sash/Sturdy/Multiscale, when it is about to be KOd, or into a teammate that resists or walls you. |
+| **Last Resort** | [VERIFIED, rule 15] -10 until every other move it knows was used since it came in; -10 always if Last Resort is its only move. |
 | **Pursuit** | +3 for attacker roles when you are predicted to switch. |
-| **Fake Out** | First turn only, when flinching is useful. |
+| **Fake Out** | [VERIFIED] First turn only, when flinching is useful: +8. After the first turn: -10. |
 | **Destiny Bond** | When you will KO it (it is faster) or 2HKO it (it is slower). |
 | **Entry hazards** | Bonus if any of your benched Pokemon would be hurt. Radical Red changes: if you have **3 or fewer** healthy Pokemon, the "already set" penalty is skipped, so a hazard setter can waste turns re-using Stealth Rock/Spikes. With 4+ mons, it avoids hazards 50% of the time if you have Rapid Spin, Defog or Magic Coat. |
 | **Speed-lowering attacks (Icy Wind etc.)** | Small bonus, only 50% of the time (Radical Red). |
@@ -75,7 +76,7 @@ Only checked on 75% of turns. Never when trapped. The first matching rule wins:
 12. Attacking stat at -3 or worse.
 13. **Save a sweeper**: an attacker that cannot KO you right now may switch to a teammate that outspeeds and KOs, or resists everything (partly random to stay unpredictable).
 
-Which teammate comes in is decided by the same scoring as a post-KO switch-in, see `post-ko-switch-in.md`.
+Which teammate comes in is decided by the same scoring as a post-KO switch-in, see `post-ko-switch-in.md`. That scoring never counts the teammate's own damage (`../verified.md` rule 14), so switch-ins favor fast and resisting Pokemon. Some rules above (absorb, save a sweeper) set the teammate themselves.
 
 ## 5. What it expects you to do
 

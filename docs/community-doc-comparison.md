@@ -1,11 +1,12 @@
 # Community AI Doc vs ROM Findings
 
-As of 2026-10-22. Compares the community Radical Red AI doc ([Google Doc](https://docs.google.com/document/d/1GLQTaXEHOPN5i-Cm6GYZYdwyszPhnd0ND9ChLO7Mp3s/edit?tab=t.0), credited to Cam, Pengu, Sarqx, Byonemil, Ssataei, Apecio, 3Plates and Zen1th) with what we found in the Radical Red 4.1 ROM. That doc says it is mostly hypothesis from player observation. Our findings come from decompiling the ROM. Details and addresses are in `docs/ai-notes.md`; the player guide starts at `docs/ai-guide.md`.
+As of 2026-10-25. Compares the community Radical Red AI doc ([Google Doc](https://docs.google.com/document/d/1GLQTaXEHOPN5i-Cm6GYZYdwyszPhnd0ND9ChLO7Mp3s/edit?tab=t.0), credited to Cam, Pengu, Sarqx, Byonemil, Ssataei, Apecio, 3Plates and Zen1th) with what we found in the Radical Red 4.1 ROM. That doc says it is mostly hypothesis from player observation. Our findings come from decompiling the ROM. Details and addresses are in `docs/ai-notes.md`; the player guide starts at `docs/ai-guide.md`.
 
 ## Summary
 
 - **Most of the community doc holds up.** Its switch conditions and doubles priority tables match the code closely, which makes sense because they appear to come from CFRU/Unbound source.
-- **4 contradictions** where the code says something different (section 1), one of them minor.
+- **3 contradictions** where the code says something different (section 1), one of them minor.
+- **The community doc was right about switch-in KO points**, against our first code reading: the KO code exists but never fires in game (section 1, verified).
 - **1 claim matching the ROM code exactly that we had wrong** (the anti-switch counter, section 2).
 - **Several important behaviors are missing** from the community doc (section 4).
 
@@ -22,12 +23,13 @@ Status key:
 
 | Topic | Community doc says | ROM shows | Evidence |
 |---|---|---|---|
-| Switch-in scoring after a KO | "Kill flags" are gone. Scores are only Resist +17, Outspeeds +14, Walls +2, Takes half -1, Faints -big. | The KO bonus is live: **+31 if the switch-in can KO you**, +8 more for a revenge kill (priority KO, Moxie, trapping ability). Every function in the KO check (`0x090DAA78`, `0x090DA9D0`, `0x090DA8A4`) is intact and uses a 96% damage roll. | switch-in scoring at `0x090D7168` adds `0x1F` (31) on a KO |
 | Faint penalties on switch-ins | "Faints to move: -big" | Two different values: **-39** if the switch-in is slower and gets KOd, **-15** if it is faster but cannot KO you. | `0x090D7168` subtracts `0x27` and `0x0F` |
 | "Only bad moves left" switch: who can come in | New switch must wall or resist; "outspeed isn't good enough". | Outspeeding **is** accepted. The check is Outspeeds OR Walls OR Resists-all (mask `0x4A`), plus "your predicted move won't hit it too hard". | `ShouldSwitch` at `0x090D824C` tests `flags & 0x4A` |
 | "Walls foe" definition | AI's Def must be greater than or equal to your Atk (and SpD vs SpA). | **Strictly greater**, and it compares against your **stat-stage-modified** Atk/SpA. Equal stats do not count as walling, and your boosts make walling harder. | `0x090D7168`: no wall if Def <= stage-modified Atk (or SpD <= SpA) |
 
 The last row is a minor wording point, but it can flip a switch-in decision when stats are close.
+
+**Correction (2026-10-24, verified in game):** we first listed "kill flags are gone" as a contradiction, because the code still has the +31 KO / +8 revenge kill / +2 2HKO rules (`0x090D7168`, KO check `0x090DAA78` -> `0x090DA9D0` -> `0x090DA8A4`). In practice the community doc is right: those rules read the switch-in's damage from a cache that is never reset, so every benched Pokemon looks like it does 0 damage and the KO points never fire. Resetting the cache by hand made them appear and changed the pick. See `docs/verified.md` rule 14.
 
 ## 2. Matches exactly (and corrected our own guide)
 
@@ -72,8 +74,8 @@ Extra details the community doc does not mention:
 | Community claim | Status |
 |---|---|
 | Resist all +17, Outspeeds +14, Walls +2, Takes half -1 | Matches ROM code |
-| No KO points | **Contradicted**: +31 KO and +8 revenge kill are live |
-| "In doubles the AI still looks for super effective and resisting all moves literally" | Consistent: doubles (and when more than one foe is out) uses type matchups instead of damage calcs |
+| No KO points | **Matches in game** [VERIFIED]: the KO code exists but never fires (rule 14) |
+| "In doubles the AI still looks for super effective and resisting all moves literally" | **Matches** [VERIFIED]: doubles uses type matchups instead of damage calcs while your party has more than one usable Pokemon (`docs/verified.md` S1) |
 
 ## 4. Not in the community doc
 
@@ -83,7 +85,7 @@ All of these were found in the ROM code (see `docs/ai-guide.md`, `docs/singles/m
 - **Difficulty modes use the same AI.** Normal, Restricted, Hardcore and Easy share the same decision logic; the only difference is Hardcore's anti-switch rule.
 - **Trainers never use items.**
 - **On 25% of turns the AI skips all switch logic.**
-- **Damage assumptions:** 93% roll (9th of 16) for the active Pokemon, 96% (12th of 16) for benched Pokemon.
+- **Damage assumptions:** 93% roll (9th of 16) for the active Pokemon. The 96% roll for benched Pokemon in the code never matters for their own damage (it is never calculated, rule 14).
 - **Move-scoring changes from CFRU:**
   - Taunt +8 when your mon has any status move.
   - Second Protect in a row has no penalty.
@@ -98,7 +100,7 @@ All of these were found in the ROM code (see `docs/ai-guide.md`, `docs/singles/m
 - **How doubles actually picks moves and targets.** The community doc has the role priority ladders but not the rest of the doubles logic (all found in the ROM code, see `docs/doubles/moves-and-targets.md` and `docs/doubles/post-ko-switch-in.md`):
   - **How roles are assigned** from the moveset. Only All-Out, Setup and Trick Room Attackers count as "attackers".
   - **Only one damaging move per target gets the ladder bonus.** Its 0 to 12 score is +4 per foe hit, +2 per KO, +1 if strongest, reduced for weak hits, and -3 for hitting its partner. Other attacks stay at base 100.
-  - **Random tie-breaks** between equal moves, and between equal targets for non-attacker roles. Attackers prefer KOs, then threats, then most damage only 25% of the time.
+  - **Random tie-breaks** between equal moves, and between equal targets for non-attacker roles. Attackers prefer KOs, then threats, then most damage only 25% of the time (verified: `docs/verified.md` D6).
   - **Never targets its partner** below a score of 101. Ignores spread moves 75% of the time when you have Wide Guard.
   - **Speed-order partner coordination**: the slower AI mon accounts for its faster partner's chosen move and target.
 
@@ -106,4 +108,4 @@ All of these were found in the ROM code (see `docs/ai-guide.md`, `docs/singles/m
 
 - What flag `0x10C0` is (it blocks AI switching entirely when set).
 - Which bosses use special battle IDs `0x10` / `0x12` (small hazard and ability exceptions).
-- Live testing of the hazard re-use quirk and the 96% switch-in roll would confirm the code reading in play.
+- Live testing of the hazard re-use quirk would confirm the code reading in play.

@@ -1,5 +1,7 @@
 # Radical Red AI research notes (working file)
 
+> Raw working notes from the first code reading. Where they disagree with `verified.md` (rules tested in game) or the topic docs, those win. Known example: the switch-in KO points described here never fire in game (`verified.md` rule 14).
+
 Source: CFRU commit b637a27 at `vendor/cfru/src/Battle_AI/`. Pieces found in the rr.gba decompile noted as [ROM]. Code findings only, nothing here is human-verified in play.
 
 ## ROM DECOMPILE RESULTS (Ghidra 12.1.4 decompile of rr.gba)
