@@ -2,7 +2,7 @@
 
 Where the research stands, so a new session can pick up without re-deriving it. Last updated 2026-10-24.
 
-**Current task:** the live AI predictor for mGBA (not built yet). Start with `HANDOFF.md` for the user's plan, then `docs/verified.md` for the rules confirmed in game so far.
+**Current task:** improving the live AI predictor from the user's play. Start with `HANDOFF.md`, then `docs/verified.md`.
 
 ## Goal
 

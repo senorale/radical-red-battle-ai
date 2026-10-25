@@ -1,86 +1,41 @@
 # Handoff: live AI predictor for Radical Red 4.1
 
-For a new Claude session. Read this, then `progress.md` (overall research state), then start working. Written 2026-10-23.
+For a new Claude session. Read this, then `progress.md` (overall state) and `docs/verified.md` (the rules confirmed in game), then continue. Written 2026-10-24.
 
-## The user's goal and plan
+## What the user is doing and how to help
 
-The user wants to understand how Radical Red 4.1's enemy AI chooses moves, singles and doubles. Their plan from here:
+The user plays Radical Red 4.1 in mGBA with the viewer script loaded. For every enemy decision the viewer shows what our model predicted (PREDICT), what the AI actually computed (ACTUAL) and how close the model was (MODEL), and writes it all to `tools/mgba/logs/decisions.jsonl`. When the user says "check the logs", analyze that file, find where the prediction missed, locate the rule in **Radical Red's own code**, fix `tools/mgba/rr_model.lua`, verify, commit, and relaunch their session when they are ready.
 
-1. **They play through the game** in mGBA with the files in this repo.
-2. **A script running inside mGBA predicts what the AI will do** each time an enemy is about to choose, using our current understanding of the AI (the rules in `docs/`). It must see the battle state: the player's party, every Pokemon's 4 moves, HP, stats and so on.
-3. **The same script then shows what the AI actually did**: the real scores it computed and the move and target it picked.
-4. **Prediction first, then actual, every decision, for both single and double battles.**
-5. **Fine-tune as they go:** when the prediction is wrong, find out why in the code, fix the model (and the docs), and repeat. Matches over many turns are what turn a rule into a human-verified [VERIFIED] finding.
+The user's rules (also in memory files):
 
-Earlier in the project the user also mentioned possibly changing game data later (for example route encounters). Not part of this task.
+- **Learn from live play.** Improvements come from the user's own battles (prediction vs what happened). Do not use the old `rr.ss6` test battle as the default test anymore; it was only a starting point.
+- **Check RR's code, not CFRU.** CFRU source (`vendor/cfru`) is only a map. Every rule needs RR addresses from the decompile (`tools/ghidra/build/full-v8/`) or assembly (`tools/ghidra/build/cfru_all.asm`, `tools/ghidra/asm.sh`). Say plainly when something is only observed.
+- **Never touch the user's session or save.** Their mGBA runs `roms/rr.gba` with saves in `roms/`. Test runs use a ROM copy (`RR_TEST_ROM=<scratch>/rr.gba`) and a separate log dir (`RR_VIEWER_LOG_DIR`). Only kill their mGBA when they ask for a restart, after they saved (check the `roms/rr.ss*` / `rr.sav` timestamps), by its PID.
+- **No approvals:** plain Bash commands, no inline scripts piped into `python3`, no `&` chains; write multi-line logic to a file (scratchpad) and run it.
+- **Writing:** no em dashes anywhere; short replies; repeat edited file paths at the end; commit when a piece works; never push without asking (the user has asked for a push before, but ask each time).
+- Doubles are not predicted yet; the user just started a doubles gauntlet.
 
-## How the user wants you to work
+## How to run things
 
-- **No approvals.** The user does not want to approve anything. Keep every Bash call a plain command. Never pipe an inline script into an interpreter (`python3 -I - <<'EOF'`) and never chain backgrounded commands with `&`; those got stopped by permission prompts even in bypass mode. Write multi-line logic to a script file and run it.
-- **Evidence, not docs.** The docs in `docs/` are our current understanding, not proof. For RR behavior, cite ROM addresses (decompile in `tools/ghidra/build/full-v8/`, then raw assembly via `tools/ghidra/asm.sh` or `tools/ghidra/build/cfru_all.asm`). A Ghidra decompile is a hint; confirm important details in assembly.
-- **Nothing is human-verified yet.** Only the user playing and confirming makes something [VERIFIED].
-- **Commits:** commit when a piece works; no `Co-Authored-By` trailer; no ticket prefix; never push without asking (a hook asks for `git push` anyway).
-- **Writing:** no em dashes anywhere. Keep replies short. After writing files, repeat their paths at the end of the reply.
-- **ROM-derived data** (decompiles, savestates, saves, logs with game data) stays in git-ignored places: `roms/`, `tools/ghidra/build/`, `vendor/`.
+- **User's session:** `tools/mgba/run_viewer.sh` (mGBA 0.11 dev build at `/Applications/mGBA.app`, loads `tools/mgba/rr_ai_viewer.lua`). Run it in the background. To restart: user saves, then `kill <pid of the mGBA with rr_ai_viewer.lua roms/rr.gba>` and relaunch.
+- **Analyze the live log:** `python3 -I tools/mgba/check_decisions.py tools/mgba/logs/decisions.jsonl [--switches]` (singles move decisions with predictions; doubles entries have `"doubles":true`, `targets` with every target's scores and `chosen_target`; switch entries are text blocks). Use `tail -n +N` to look only at entries since the last check.
+- **Replay a savestate automatically:** `tools/mgba/run_repeat_test.sh <state> [runs] [random|fixed]` with env options: `RR_TEST_DECISIONS=N` (turns per run), `RR_TEST_TRACE=ADDR:reg,...` (log a register each time an address runs; `090E1380:r1,090E1380:r14,090E1394:r1,090E1394:r14` = every score change and its caller), `RR_TEST_PLAN="1:switch4"` (scripted player switch), `RR_TEST_SEED_MAIN=turn`, `RR_TEST_DMGCAL=1` (log RR's cached damage next to the model's), `RR_TEST_EXTRA_SCRIPT=<viewer>` (+ `RR_VIEWER_LOG_DIR`), `RR_TEST_ROM`. Only use it on a savestate the user points to. `summarize_trace.py`, `check_dmgcal.py`, `check_random2.py` analyze its log.
+- **ROM helpers** (`tools/rom/`): `move_info.py` (move data by name), `item_info.py`, `ability_ids.py` (RR ability IDs), `find_bl.py` (callers of an address), `find_refs.py`, `jump_table.py` (decode switch tables), `find_text.py`, `find_base_stats.py`.
 
-## What exists now
+## What the model does now (`tools/mgba/rr_model.lua`)
 
-### Emulator and files
+Singles move scores, computed at the move-choice entry `0x090C82C0` from the battle state, plus faint-replacement prediction. Measured in the user's play: about 80% of move decisions had the real choice among the predicted options; faint replacements matched RR's per-slot scores exactly in every logged case since the bench fix.
 
-- mGBA 0.11.0 development build installed at `/Applications/mGBA.app` (needed: stable 0.10 has no breakpoint API).
-- `roms/rr.gba`: Radical Red 4.1 (SHA1 `964f951a0fdaf209e4ea1344883ef0d557bb3a80`, CRC32 `FBA55DD8`).
-- `roms/rr.sav`: the user's in-game save. `roms/rr.ss1`-`rr.ss3`: their mGBA savestates (F1-F3 load them). All match this ROM. `rr.ss2` is in a wild single battle (Tepig Lv6 vs Poochyena Lv4); its EWRAM is extracted to `roms/states/ss2.ewram` for offline tests.
-- `roms/openemu/*.state`: two OpenEmu states from 2023-08-05, extracted to raw mGBA states. **They belong to a different ROM** (CRC32 `4A8B3B82`, MD5 `13b578459a321635fc5cfe77abb25cb7`), so they cannot be used with 4.1. `tools/mgba/state_info.py <state> <rom>` shows this.
-- `roms/rr.sav.unused-2026-10-23`: an empty save from a first launch; safe to delete.
-- Launch: `tools/mgba/run_viewer.sh` (starts mGBA with the ROM and `--script tools/mgba/rr_ai_viewer.lua`).
+Inputs read from RR's own caches (so tests are about the scoring rules, not formulas): AI damage `gNewBS+0x2F0`, strongest move `+0x22E` (can lag one Pokemon behind after a faint), predicted player move `+0x1EE`, end-of-turn damage `+0x810`, bench damage `+0x3F0`, AI starting scores (AI struct `+4`). `gNewBS` = `*0x0203E038`.
 
-### `tools/mgba/rr_ai_viewer.lua` (shows what the AI actually did)
+Rules modelled (details and evidence in `docs/verified.md`, rules 1-13): roles (RR's table, `0x090C40C4`); KO first +9 / slow KO by role (`0x090C69F4`) / strongest +2; best-accuracy KO move only; RR's MoveWouldHitFirst quirk (your higher priority ignored, `0x090DA0A6`); Speed with weather abilities (`0x0906E320`); healing -10/-9 by HP; poison/Toxic (+role bonus, -10 if you cannot be poisoned); Stockpile and stat boosts via the "good idea to boost" check (`0x090C3C64`); Speed-drop +3 coin; -15 no effect; Ground into airborne = 0 (observed, code spot not found); Fake Out (+8 first turn, -10 after); unusable moves 0; ties and coins as odds. Damage fallback formula covers RR abilities/items/weather and multi-hit = 2 hits; 145 of 183 cached values matched exactly.
 
-Breakpoints inside RR's move-choice function `0x090C82C0` (CFRU `BattleAI_ChooseMoveOrAction`, singles and doubles inlined):
+Switch-in model: RR's scorer rules (`0x090D7168`) with species base stats (`0x097B98EC`, 28 bytes). **Key finding:** RR's bench damage cache is only reset by `ClearCachedAIData` `0x090C8BA4` (called only from Hardcore's re-pick `0x090C8F04`), so it stays 0 and the AI gives bench Pokemon no KO/2HKO credit.
 
-| Address | Meaning |
-|---|---|
-| `0x090C83AC` | Singles: scores final, about to pick the best. Snapshot the AI struct here. |
-| `0x090C875C` | Doubles: scores for the current target final. Runs once per target. |
-| `0x090C837A` | The function's only exit. `r0` = chosen move slot 0-3, 4 = flee, 5 = watch. `gBankTarget` holds the final target (set at decompile line 372 of `090C82C0`, then retargeted if it hit the partner with a negative score). |
+## Open items, in rough priority
 
-Why it only sees real decisions: `0x090C82C0` is the only caller of `BattleAI_DoAIProcessing` `0x090C6F3C` (call sites `0x090C838C`, `0x090C871E`). The per-turn move predictions (`PredictMovesForBanks` in CFRU) call `AIScript_Negatives`/`Positives` directly into local arrays and do not touch the AI struct's scores.
-
-It prints, per decision: the AI Pokemon, each target considered, every move's score, ties (broken at random), and the chosen move/target. Tested only offline: `lua tools/mgba/test_viewer.lua roms/rr.gba tools/mgba/rr_ai_viewer.lua` (fake RAM, real ROM name tables). **Not yet run in a real battle.** Does not cover switching (ShouldSwitch `0x090D824C`) or post-KO switch-ins (`0x090D7168`).
-
-### RAM and ROM layout (RR 4.1)
-
-Verified in RR's code this session unless marked otherwise:
-
-| What | Address | Notes |
-|---|---|---|
-| `gBattleResources` | `0x02023FF4` | `[+0x14]` = AI struct: `+0` aiState (0 setup, 1 scoring, 2 done), `+1` movesetIndex, `+2` moveConsidered (u16), `+4` score[4] (s8), `+0xC` aiFlags (u32), `+0x10` aiAction, `+0x11` aiLogicId. From `BattleAI_DoAIProcessing` `0x090C6F3C`. |
-| AI battler | `0x02023D6B` | battler being scored (u8) |
-| AI target | `0x02023D6C` | `gBankTarget` (u8) |
-| `gBattleMons` | `0x02023BE4` | 0x58 bytes per battler, CFRU `struct BattlePokemon`: `+0x18` is type3 (not an HP stage), stages Atk..Eva at `+0x19`..`+0x1F`. Checked on real data (`rr.ss2`) and the type reads at `0x0906CB64`. Full layout in `tools/mgba/rr_state.lua`. |
-| Move names | `0x090F3188` | 13 bytes each (Gen 3 charset). 32 pointers reference it; vanilla table unused. |
-| Species names | `0x094042CC` | 11 bytes each. 41 pointers reference it. |
-| `gBattleMoves` | `0x091521D0` | 12 bytes per move. Seen in code: `+0` effect, `+10` split (2 = status). Other fields assumed vanilla-like (power, type, accuracy, pp, secondary chance, target, priority, flags); **check before relying on them**. |
-| `gPlayerParty` / `gEnemyParty` | `0x02024284` / `0x0202402C` | Checked on real data (`rr.ss2`). 100-byte structs, **unencrypted, fixed order G A E M, checksum 0**: `EncryptBoxMon` `0x0803F8F8` eor nopped, `GetSubstruct` order forced to 0 at `0x0803F94C`, `GetBoxMonData` decrypt nopped `0x0803FD94`-`0x0803FDA6`. `gPlayerPartyCount` is `0x02024029` on real data (`0x02024028` from `symbols.txt` is wrong). |
-| Doubles damage ladder | `0x093504B0` | `gDoublesDamageViabilityMapping[class-11][score]`, recorded earlier as byte-identical to CFRU; not re-checked this session. |
-
-Battlers: 0 = player left, 1 = foe left, 2 = player right, 3 = foe right.
-
-mGBA savestates (`.ss*`) are PNG files with the zlib-compressed raw state in chunk `gbAs`: 0x61000 bytes, ROM CRC32 at `+0x08`, EWRAM at `+0x21000` (`tools/mgba/extract_state.py`). The user's states have version magic `0x0100000B`.
-
-### Other tools worth knowing
-
-- `tools/ghidra/full.sh`, `tools/ghidra/validate_full.py`, `tools/ghidra/xcheck_calls.py`: full decompile and its validation (v8 is the trusted baseline, `tools/ghidra/build/full-v8/`).
-- `tools/rom/find_names.py`: locates name tables and counts references.
-- `tools/recomp/`: byte-matching tools (paused; see `progress.md` for why).
-
-## What to build next
-
-1. **Done (2026-10-23): `tools/mgba/rr_state.lua`**, tested on `rr.ss2` by `tools/mgba/test_state.lua`. Missing: item and ability names, party abilities (need the base stats table), bit meanings of weather/side statuses/status1/status2. Original task: both sides' active Pokemon from `gBattleMons` (species, HP, stats, stat stages, ability, item, types, status, moves), plus both full parties from `gPlayerParty`/`gEnemyParty` (decrypt the Gen 3 substructures). Confirm every offset in RR's code first.
-2. **Prediction hook:** break at the entry of `0x090C82C0` (or just before the scoring loop) and print "PREDICT": the model's score per move per target and the predicted move/target, using only data the script read.
-3. **Model** (start simple, refine): base 100 per move; damage estimate at the 93% roll (the AI's KO assumption per `docs/ai-guide.md`); KO bonuses, strongest-move bonus and immunity penalties for singles from `docs/singles/move-or-switch.md`; for doubles the role rules (`PredictFightingStyle` `0x090C40C4`, including RR's exactly-3 Setup Attacker check at `0x090C4574`), the per-target damage score and the ladder table at `0x093504B0`, per `docs/doubles/moves-and-targets.md`. Mark moves the model does not understand (most status moves at first) as low confidence instead of guessing.
-4. **Then the existing viewer's "ACTUAL"** output: real scores and the chosen move/target, right after the prediction.
-5. **Log every decision** (state, predicted scores, actual scores, choice) as one JSON line per decision to a git-ignored file (for example `tools/mgba/logs/`), so a later session can find systematic misses and trace them to the ROM code.
-6. Keep `tools/mgba/test_viewer.lua`-style offline tests working for anything that can be faked.
-
-Later: also predict switching and post-KO switch-ins (`docs/singles/post-ko-switch-in.md`, `docs/doubles/post-ko-switch-in.md`).
+1. **Doubles model:** the user's gauntlet is logging every target. Seen so far: spread moves +16 (Electroweb, Bulldoze) or +11 (Air Cutter), moves on its own partner scored too (Sleep Powder on partner 60), sleep moves +7. Build from RR's doubles code: role (`PredictFightingStyle` doubles path, RR-only "exactly 3" Setup Attacker at `0x090C4574`), damage ladder `0x093504B0`, target choice in `0x090C82C0` (doubles branch, decompile lines ~66-150).
+2. **Singles status moves not scored** (seen in play): Reflect +15, Protect +7 / Detect -6, Hypnosis +7 or -10, Thunder Wave / Supersonic / Focus Energy +5, Cotton Spore +6, Leech Seed +6/-4, Safeguard +3, Will-O-Wisp +7, Stealth Rock +6, Shell Smash +6, Sleep Talk -10 when awake, Last Resort -8, Knock Off +3, Sucker Punch -9, Recover's full-HP bonus (`0x090C4C08`, tried once and reverted because it broke other turns).
+3. **Voluntary switches** are logged with their reason (14 ShouldSwitch checks, viewer breakpoints) but not predicted; only the 25% skip roll is modelled.
+4. Find the code for Ground-into-airborne = 0; Stockpile's extra gate (`0x090DD670`) beyond the predicted-Roar case; where RR resets the role cache each turn.
+5. `README.md` / `docs/singles/*.md` still carry CFRU-based claims; move them onto RR addresses over time.
