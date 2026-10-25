@@ -361,7 +361,13 @@ function M.predict(mem, ai_b, target_b, opts)
 		end
 		local function add(n, why) r.score = r.score + n; r.notes[#r.notes + 1] = string.format("%+d %s", n, why) end
 		local eff = M.effectiveness(mem, mv.type, foe)
-		if mv.split ~= 2 then
+		-- Ground move into an airborne target (Flying type, Levitate 26, Air Balloon item 703): RR scores 0
+		-- (seen in game twice, Bulldoze vs Gyarados), unlike other immunities (-15). Code spot not yet found.
+		local airborne = foe.type1 == 2 or foe.type2 == 2 or foe.type3 == 2 or foe.ability == 26 or foe.item == 703
+		if mv.split ~= 2 and mv.type == 4 and airborne then
+			r.score = 0
+			r.notes[#r.notes + 1] = "Ground move into an airborne target: 0"
+		elseif mv.split ~= 2 then
 			if eff == 0 then
 				add(-15, "no effect")
 			else
