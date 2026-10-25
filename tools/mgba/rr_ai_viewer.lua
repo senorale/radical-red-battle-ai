@@ -117,6 +117,16 @@ local function log_decision(battler, runs, choice, pred)
 		parts[#parts + 1] = string.format('"target":"%s","moves":[%s],"actual":[%s]', json_escape(species_name(s.target)),
 			table.concat(mv, ","), table.concat(sc, ","))
 	end
+	-- Doubles: every target the AI scored, and the target it finally chose (gBankTarget at the exit).
+	if #runs > 1 or (emu:read32(0x02022B4C) & 1) ~= 0 then
+		local ts = {}
+		for _, r in ipairs(runs) do
+			local sc = {}
+			for i = 0, 3 do sc[#sc + 1] = tostring(r.scores[i]) end
+			ts[#ts + 1] = string.format('{"battler":%d,"name":"%s","scores":[%s]}', r.target, json_escape(species_name(r.target)), table.concat(sc, ","))
+		end
+		parts[#parts + 1] = string.format('"doubles":true,"chosen_target":%d,"targets":[%s]', emu:read8(AI_TARGET), table.concat(ts, ","))
+	end
 	if pred and pred.moves then
 		local ps, po = {}, {}
 		for i = 0, 3 do
