@@ -2,7 +2,7 @@
 
 How the Radical Red 4.1 AI picks which Pokemon to send in during a double battle. There is no separate doubles function: the singles scoring (`0x090D7168`, called from `OpponentHandleChoosePokemon` at `0x09068A28`) runs with doubles-only branches, which change the result a lot. For single battles see `../singles/post-ko-switch-in.md`. Read `../ai-guide.md` first for the tags.
 
-> **Two separate flows** (`../findings.md`, "Switching: two separate flows"): a **mid-turn swap** first asks *should it switch?* (in doubles: `../findings.md` M1 to M3) and then *who comes in?*; a **post-KO replacement** only asks *who comes in?*. This doc is the *who comes in* part, shared by both flows.
+> **Two separate flows** (`../findings.md`, "Switching: two separate flows"): a **mid-turn swap** first asks *should it switch?* (in doubles: `../findings.md` M1 to M3) and then *who comes in?*; a **post-KO replacement** only asks *who comes in?*. This doc is the *who comes in* part, shared by both flows. The two steps are separate code, not one chain: why it leaves does not change who it picks (worked example in `../findings.md`).
 
 The verified rules, with evidence, are in `../findings.md` ("Doubles: post-KO switch-in", S1 to S3). The doubles switch-in model in `tools/mgba/rr_model.lua` follows them and matched RR's score for every party slot in all 19 logged doubles switch-ins.
 

@@ -227,6 +227,18 @@ The AI changes Pokemon in two different situations, and they run different code:
 
 Step 2 is the same switch-in scorer (`0x090D7168`) in both flows, so the bench damage cache bug (rule 14) and the doubles type-only defense (S1) apply to both. Step 1 exists only for the mid-turn swap. In the viewer, a mid-turn swap shows as a `SWITCH CHECK -> SWITCH` line followed by a `SWITCHES -> slot N` block; a post-KO replacement shows as `replacement after faint`. Every turn, each enemy's `SWITCH CHECK` line also shows when it stays and why.
 
+**Not one chain.** It is natural to read a swap as one thought: "my Attack dropped, so I bring in something that fixes that". The AI does not work that way. *Why* it leaves (step 1) and *who* it brings (step 2) are two separate pieces of code. The reason for leaving is not passed to the choice of who comes in: step 2 always runs the same scorer (Speed, resisting or walling your Pokemon) whatever triggered the swap, so a Pokemon that left because its Attack fell is replaced by the same Pokemon that would replace a fainted one. The only links between them:
+
+- a few step-1 checks need a "good enough" switch-in to exist before they say yes (for example the attack-stat check needs the best candidate to wall or resist your Pokemon), so step 1 peeks at step 2's result, but only as a yes/no;
+- a few step-1 checks pick the Pokemon themselves instead of using step 2 (the absorb check brings the absorber).
+
+**Worked example (doubles, 2026-10-25).** Your Gyarados and Azumarill against Ambipom (Attack -3, paralyzed) and Granbull; healthy on the AI's bench: Perrserker.
+
+1. *Step 1, Ambipom:* the 25% skip roll misses; checks 1 to 12 do not apply; check 13 (attacking stat too low): all its moves are physical, Attack is -3, neither of your Pokemon can KO it, and the best candidate (Perrserker) has the "walls" flag, so: **swap**. Two turns earlier, at Attack -2, the same check said stay and Ambipom attacked.
+2. *Step 2, who:* Perrserker scores 16 (Speed tie with Azumarill +14, walls Azumarill +2; Gyarados' Bulldoze hits it super-effectively -1, but the score was still 0 then). Nothing about the Attack drop enters this score. Perrserker comes in and Ambipom does not attack that turn.
+3. *Same turn, Granbull's step 1:* stops before the checks, because its only possible switch-in (Perrserker) is already claimed by Ambipom.
+4. *Later, Granbull faints:* post-KO, so no step 1. Step 2 only: Ambipom scores 16 and comes back.
+
 - **Code:** turn start `AI_TrySwitchOrUseItem` `0x090C802C` calls ShouldSwitch; the post-KO pick is `OpponentHandleChoosePokemon` `0x09068A28`, which reads the scorer's result. [HYPOTHESIS]
 - **Evidence:** the viewer has logged 40 mid-turn swaps (39 in singles, 1 in doubles), each preceded by a check that fired, and every post-KO replacement came from the scorer with no switch check involved. [TESTED]
 

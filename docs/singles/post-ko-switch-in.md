@@ -2,7 +2,7 @@
 
 How the Radical Red 4.1 AI picks which Pokemon to send in during a single battle.
 
-> **Two separate flows** (`../findings.md`, "Switching: two separate flows"): a **mid-turn swap** first asks *should it switch?* (the checks in `move-or-switch.md` section 4) and then *who comes in?*; a **post-KO replacement** (or forced switch) only asks *who comes in?*. This doc is the *who comes in* part, shared by both flows. For double battles see `../doubles/post-ko-switch-in.md`. Read `../ai-guide.md` first for the tags and damage roll.
+> **Two separate flows** (`../findings.md`, "Switching: two separate flows"): a **mid-turn swap** first asks *should it switch?* (the checks in `move-or-switch.md` section 4) and then *who comes in?*; a **post-KO replacement** (or forced switch) only asks *who comes in?*. This doc is the *who comes in* part, shared by both flows. The two steps are separate code, not one chain: why it leaves does not change who it picks (worked example in `../findings.md`). For double battles see `../doubles/post-ko-switch-in.md`. Read `../ai-guide.md` first for the tags and damage roll.
 
 ## 0. The bench damage cache bug: the switch-in's own damage never counts [OBSERVED]
 
