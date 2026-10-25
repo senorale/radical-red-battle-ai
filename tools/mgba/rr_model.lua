@@ -275,6 +275,148 @@ function M.predicted_move(mem, bank, target)
 	return v
 end
 
+-- RR's KO caches: CanKnockOut 0x090DFED4 u8 at gNewBS + 0x820 + atk*4 + def, Can2HKO 0x090DFE50
+-- u8 at gNewBS + 0x830 + atk*4 + def; 0xFF = not computed yet.
+function M.cached_ko(mem, atk_b, def_b, hits)
+	local v = mem:read8(mem:read32(M.GNEWBS) + (hits == 2 and 0x830 or 0x820) + atk_b * 4 + def_b)
+	if v == 0xFF then return nil end
+	return v ~= 0
+end
+
+-- Last Resort (CanUseLastResort 0x0906CAD4): every other move used since it came in (bit per slot
+-- at gNewBS + 0x6D + battler); fails when Last Resort is the only move.
+local LAST_RESORT = 0x2A2
+local function can_use_last_resort(mem, ai)
+	local used = mem:read8(mem:read32(M.GNEWBS) + 0x6D + ai.battler)
+	local ok = false
+	for i = 0, 3 do
+		local id = ai.moves[i]
+		if id == 0 then
+			if i == 1 then return false end
+			break
+		end
+		if id == LAST_RESORT then ok = true
+		elseif used & (1 << i) == 0 then return false end
+	end
+	return ok
+end
+
+-- Pivot moves (U-turn, Volt Switch, Flip Turn) in singles, Positives 0x090D2F60: ShouldPivot
+-- 0x090C5704 returns 0 don't (-9), 1 can (no change), 2 pivot, 3 pivot now (bonus 0x090C6938).
+local PIVOT_MOVES = { [0x1BA] = true, [0x1BB] = true, [0x2D8] = true }
+-- Pivot bonus by role, jump table 0x090C69BE (s8 entries, roles 1-10 in singles).
+local PIVOT_BONUS = { [1] = 3, [2] = 9, [3] = 9, [4] = 7, [5] = 9, [6] = 9, [7] = 7, [8] = 7, [9] = 4, [10] = 3 }
+-- IsClassDamager 0x090C408E: roles 1-4 and the doubles attacker roles 11-13.
+local function is_damager(role) return (role >= 1 and role <= 4) or (role >= 11 and role <= 13) end
+
+local function has_split(mem, mon, split)
+	for i = 0, 3 do
+		if mon.moves[i] ~= 0 then
+			local mv = M.move(mem, mon.moves[i], mon)
+			if mv.split == split and mv.power > 0 then return true end
+		end
+	end
+	return false
+end
+
+-- HasMonToSwitchTo 0x090740DC (singles): a live party member other than the one on the field.
+local function has_mon_to_switch(mem, ai_b)
+	local party = S.read_party(mem, (ai_b & 1) == 1 and "enemy" or "player")
+	local on_field = mem:read16(S.BATTLER_PARTY_INDEXES + ai_b * 2)
+	for slot = 0, 5 do
+		local pm = party[slot]
+		if pm and pm.hp > 0 and pm.is_egg == 0 and slot ~= on_field then return true end
+	end
+	return false
+end
+
+-- ShouldPivot 0x090C5704, singles path. c: ai, foe, ai_b, target_b, role, mv, slot, goes_first,
+-- ko(a, d, hits), ko_without(slot), chip. Returns the result and a list of approximations used.
+local function should_pivot(mem, c)
+	local approx = {}
+	local nbs = mem:read32(M.GNEWBS)
+	if mem:read8(nbs + 0x1C5) & (1 << c.ai_b) ~= 0 then return 3, approx end
+	local ai, foe = c.ai, c.foe
+	-- AnyUsefulOffensiveStatIsRaised 0x090DD920: Speed up, or Attack/Sp. Atk up with a move to use it.
+	local useful = ai.stages.spe > 6 or (ai.stages.atk > 6 and has_split(mem, ai, 0)) or (ai.stages.spa > 6 and has_split(mem, ai, 1))
+	local damager = is_damager(c.role)
+	local boost = (useful and damager) or foe.stages.eva > 9
+	-- Best switch-in flags (GetMostSuitableMonToSwitchIntoFlags 0x090D7FE4, gNewBS + 0x858 + battler*2).
+	local flags = mem:read8(nbs + 0x858 + c.ai_b * 2)
+	approx[#approx + 1] = "switch-in flags read before RR refreshes them"
+	if mem:read16(0x02023DDE + (c.ai_b & 1) * 2) & 0x10 ~= 0 then
+		approx[#approx + 1] = "hazard damage on switch-in not modelled"
+	end
+	if not has_mon_to_switch(mem, c.ai_b) then return 1, approx end
+	local pred = mem:read16(nbs + 0x1EE + (c.target_b * 4 + c.ai_b) * 2)
+	if pred == 0xFFFF and not boost then return 2, approx end -- you are predicted to switch
+	local status = c.mv.split == 2
+	local function breaks_sash()
+		-- Focus Sash 683, Sturdy 5, Multiscale 0x51, Shadow Shield 0x115 at full HP (approximation of
+		-- 0x09074FE0, 0x0905FB96, 0x09073AB0).
+		local full = foe.hp == foe.max_hp
+		return full and (foe.item == 683 or foe.ability == 5 or foe.ability == 0x51 or foe.ability == 0x115)
+	end
+	local function bottom(stat_mask)
+		if flags & stat_mask == 0 then return 0 end
+		if mem:read16(0x02023DDE + (c.ai_b & 1) * 2) & 0x10 ~= 0 and flags & 0x20 ~= 0 then return 2 end
+		if c.chip >= ai.hp then return 2 end
+		if not damager then return 1 end
+		local phys, spec = has_split(mem, ai, 0), has_split(mem, ai, 1)
+		if not phys and not spec then return 1 end
+		local stage = (phys and not spec) and ai.stages.atk or ai.stages.spa
+		return stage < 4 and 2 or 1
+	end
+	if c.goes_first then
+		if c.ko_without(c.slot) then return 0, approx end
+		if c.ko(c.ai_b, c.target_b, 1) then return 1, approx end
+		if damager then
+			if c.ko(c.ai_b, c.target_b, 2) then
+				if c.ko(c.target_b, c.ai_b, 1) then return 2, approx end
+				if status then return 0, approx end
+				if flags & 0x02 ~= 0 and flags & 0x21 ~= 0 then return 2, approx end
+				return breaks_sash() and 2 or 0, approx
+			end
+			if boost then return 0, approx end
+			if not status and breaks_sash() then return 2, approx end
+		elseif boost then
+			return 0, approx
+		end
+		local r = bottom(0x0A)
+		if r == 1 and not damager then r = 0 end
+		return r, approx
+	end
+	if c.ko(c.target_b, c.ai_b, 1) then return c.mv.effect ~= 0x99 and 1 or 0, approx end
+	if c.ko(c.target_b, c.ai_b, 2) then
+		if c.ko(c.ai_b, c.target_b, 1) then return c.ko_without(c.slot) and 0 or 1, approx end
+		if not damager or flags & 0x01 == 0 then return 0, approx end
+		return flags & 0x4A ~= 0 and 2 or 0, approx
+	end
+	if c.ko(c.ai_b, c.target_b, 1) then
+		if c.ko_without(c.slot) then return 0, approx end
+		return boost and 0 or 1, approx
+	end
+	if c.ko(c.ai_b, c.target_b, 2) then
+		if not damager or status then return 0, approx end
+		if flags & 0x01 ~= 0 and flags & 0x4A ~= 0 then return 2, approx end
+		if flags & 0x22 == 0x22 then return 2, approx end
+		return breaks_sash() and 2 or 0, approx
+	end
+	if damager and flags & 0x41 == 0x41 then return 2, approx end
+	if boost then return 0, approx end
+	return bottom(0x4A), approx
+end
+
+-- Moves in slot order (the AI scores slot 0 first; a pivot move can change the strongest move for
+-- the slots after it).
+local function in_slot_order(t)
+	local i = -1
+	return function()
+		repeat i = i + 1 until i > 3 or t[i] ~= nil
+		if i <= 3 then return i, t[i] end
+	end
+end
+
 -- Predict one AI battler's move scores against one target.
 -- Returns { role, moves = { [slot] = { name, score, alt (score with coin), notes, unknown } }, odds }
 function M.predict(mem, ai_b, target_b, opts)
@@ -351,7 +493,21 @@ function M.predict(mem, ai_b, target_b, opts)
 		for i = 0, 3 do start[i] = mem:read8(aist + 4 + i) end
 	end
 	local first_turn = mem:read8(0x02023E0C + ai_b * 0x1C + 0x16) ~= 0 -- gDisableStructs isFirstTurn
-	for i, mv in pairs(mvs) do
+	-- KO checks for ShouldPivot: RR's caches when computed, else the model's damage.
+	local function can_ko(a, d, hits)
+		local v = nil
+		if opts and opts.cache then v = M.cached_ko(mem, a, d, hits) end
+		if v ~= nil then return v end
+		if a == ai_b then return best_dmg * hits >= foe.hp end
+		return foe_best * hits >= ai.hp
+	end
+	local function ko_without(slot)
+		for j, m in pairs(mvs) do
+			if j ~= slot and m.split ~= 2 and m.effect ~= 0x94 and start[j] ~= 0 and dmg[j] >= foe.hp then return true end
+		end
+		return false
+	end
+	for i, mv in in_slot_order(mvs) do
 		local r = { name = mv.name, score = 100, notes = {}, unknown = false }
 		if start[i] == 0 then
 			r.score = 0
@@ -386,6 +542,25 @@ function M.predict(mem, ai_b, target_b, opts)
 				if ko and goes_first then add(9, "KO, goes first")
 				elseif ko and not has_protect then add(SLOW_KO[role] or 0, "KO, goes second (role)")
 				elseif i == strongest then add(2, "strongest move") end
+				if mv.id == LAST_RESORT and not can_use_last_resort(mem, ai) then
+					add(-10, "Last Resort not usable yet")
+				end
+				if PIVOT_MOVES[mv.id] then
+					local sp, approx = should_pivot(mem, { ai = ai, foe = foe, ai_b = ai_b, target_b = target_b, role = role,
+						mv = mv, slot = i, goes_first = goes_first, ko = can_ko, ko_without = ko_without, chip = chip })
+					if sp == 3 then add(9, "pivot now (switch logic)")
+					elseif sp == 2 then add(PIVOT_BONUS[role] or 0, "good time to pivot, bonus by role")
+					elseif sp == 0 then
+						add(-9, "bad time to pivot")
+						-- RR then recalculates the strongest move without it (0x090DE4EC).
+						if i == strongest then
+							local best, bi = -1, nil
+							for j, m in pairs(mvs) do if j ~= i and m.split ~= 2 and dmg[j] > best then best, bi = dmg[j], j end end
+							strongest = bi
+						end
+					else r.notes[#r.notes + 1] = "can pivot (no change)" end
+					if #approx > 0 then r.notes[#r.notes + 1] = "pivot: " .. table.concat(approx, "; ") end
+				end
 				if BOOST[mv.effect] then
 					local b = stat_boost(role, mv.effect, ai, boost_ctx)
 					if b then add(b, "stat-boosting attack, bonus by role") else r.notes[#r.notes + 1] = "boost not a good idea" end
