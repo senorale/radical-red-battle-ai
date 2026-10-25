@@ -115,7 +115,7 @@ The AI processes its two Pokemon in speed order, so the slower one knows what th
 | Protect | Second Protect in a row has no penalty in Radical Red; third gets -10. | [HYPOTHESIS] |
 | Penalties | All "avoid" penalties from `../singles/move-or-switch.md` are doubled. Seen: moves with no effect score 70 (-30, singles -15), into an absorbing ability 60 (-40). | [HYPOTHESIS, CFRU], -30 [OBSERVED] |
 | Thaw | A frozen AI Pokemon with a thawing move gets +20. | [HYPOTHESIS] |
-| Switching | Most switch rules in `../singles/move-or-switch.md` are singles-only. In doubles it mainly switches to absorb your predicted attack, when it has only bad moves left against both foes, or for Yawn/asleep/residual damage. | [HYPOTHESIS, CFRU] |
+| Switching mid-turn | Step 1 of the mid-turn swap (should it switch?). In doubles "about to die" and "save a sweeper" are off; it can still switch to absorb your predicted attack when its own attacks are weak, when it has only bad moves against both foes, for Yawn/sleep/residual damage, or with an attacking stat at -3 (seen once). Full table: `../findings.md` M1 to M3. | [HYPOTHESIS], stat drop [TESTED] |
 | Replacements after a KO | Scored against both of your Pokemon and summed. Its own damage never counts (the bench damage cache bug: bench damage reads as 0, `../findings.md` rule 14); your offense uses only the type chart; Speed against each of your Pokemon is +14. Details in `post-ko-switch-in.md`. | [VERIFIED]; bench damage [OBSERVED] |
 
 ## Priority ladders

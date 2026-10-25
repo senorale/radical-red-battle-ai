@@ -13,6 +13,7 @@ Evidence comes from the mGBA scripts in `../tools/mgba/`: `rr_ai_viewer.lua` sto
 | **1 to 16** | General rules, mostly checked in single battles (the title says "(singles)" when it only applies there) |
 | **D1 to D6** | Doubles: how each enemy picks its move and target (section "Doubles: move selection") |
 | **S1 to S3** | Doubles: which Pokemon comes in after a faint (section "Doubles: post-KO switch-in") |
+| **M1 to M3** | Doubles: whether a healthy Pokemon swaps out mid-turn (section "Doubles: mid-turn switch") |
 | **[VERIFIED]** | Tested, and our model's predictions (`tools/mgba/rr_model.lua`) also matched the real game in the cases we logged |
 | **[TESTED]** | A code hypothesis supported by in-game output from our tools (viewer logs, repeat tests, traces), not yet by the model |
 | **[OBSERVED]** | A behavior seen repeatedly in game that the code found so far does not explain |
@@ -33,6 +34,8 @@ Other docs refer to these by label, e.g. "`findings.md` rule 14" or "D6".
 | S1 | Switch-in score per foe, summed: Speed +14, resists all +17, walls +2, super-effective -1 |
 | S2 | Which Pokemon can come in; ties are a 50% flip favoring later slots |
 | S3 | Your last Pokemon: damage-based, and "you KO it" is only -1 |
+| Two flows | Mid-turn swap (should it switch? then who) vs post-KO replacement (only who) |
+| M1 to M3 | Doubles mid-turn swap: gates, the just-switched-in skip, which of the 14 checks can fire |
 
 ## 1. The AI chooses its action before you choose yours [TESTED]
 
@@ -211,6 +214,22 @@ What still counts: outspeeds +14, resists all your moves +17, walls your attack 
 - **Code:** Positives `0x090D2F60` calls ShouldPivot `0x090C5704`. Result 0 (do not pivot): -9, and if the move was the strongest, the strongest-move bonus is recalculated without it (`0x090DE4EC`). Result 2 (pivot): a bonus by role from jump table `0x090C69BE`: +3 pure attacker or hazard setter, +9 setup sweepers, stall and Baton Pass, +7 cleric and screens, +4 phazer. Result 3 (pivot now, set by the switch logic at `gNewBS+0x1C5`): +9. Result 1 (can pivot): no change; this is what it returns when it has no Pokemon to switch to. ShouldPivot reads RR's KO caches (`gNewBS+0x820` CanKnockOut, `+0x830` Can2HKO) and the best switch-in's flags. [HYPOTHESIS]
 - **Evidence:** Togedemaru (pure attacker): U-turn 91 (-9) on healthy turns, 103 (+3) at 24% HP against Clodsire (it then pivoted to Komala), 100 or 102 once it was the last Pokemon. The model with this check matched the U-turn score on all 4 replay turns where it ran (91, 91, 91, 100).
 
+## Switching: two separate flows (singles and doubles)
+
+The AI changes Pokemon in two different situations, and they run different code:
+
+| | **Mid-turn swap** (voluntary) | **Post-KO replacement** (also forced switches) |
+|---|---|---|
+| When | Start of a turn, before moves, for a healthy Pokemon on the field | After one of its Pokemon faints (or is forced out: its own U-turn, Eject Button, ...) |
+| Step 1: should it change? | **Yes, ShouldSwitch `0x090D824C` decides**: the 25% skip roll (rule 2), then up to 14 checks in order (absorb, only bad moves, Yawn, avoid death, ...). If none fires it stays and picks a move | No question: it has to send someone in |
+| Step 2: who comes in? | Some checks name the Pokemon themselves (absorb picks the absorber). Most take the **best switch-in score** | The **best switch-in score** |
+| Effect on the turn | The swap replaces its attack for that turn | Happens at the end of the turn (or right after the U-turn) |
+
+Step 2 is the same switch-in scorer (`0x090D7168`) in both flows, so the bench damage cache bug (rule 14) and the doubles type-only defense (S1) apply to both. Step 1 exists only for the mid-turn swap. In the viewer, a mid-turn swap shows as a `SWITCH CHECK -> SWITCH` line followed by a `SWITCHES -> slot N` block; a post-KO replacement shows as `replacement after faint`. Every turn, each enemy's `SWITCH CHECK` line also shows when it stays and why.
+
+- **Code:** turn start `AI_TrySwitchOrUseItem` `0x090C802C` calls ShouldSwitch; the post-KO pick is `OpponentHandleChoosePokemon` `0x09068A28`, which reads the scorer's result. [HYPOTHESIS]
+- **Evidence:** the viewer has logged 40 mid-turn swaps (39 in singles, 1 in doubles), each preceded by a check that fired, and every post-KO replacement came from the scorer with no switch check involved. [TESTED]
+
 ## Doubles: move selection
 
 How each enemy picks a move and a target in a double battle. Evidence is the viewer's per-target logs (`tools/mgba/logs/`, 2026-10-24 and 2026-10-25) and repeat tests on copies of the user's savestate with a fresh `Random2` seed per run.
@@ -280,6 +299,39 @@ Not the two Pokemon on the field, not a slot the partner already picked this tur
 ### S3. Your last Pokemon: damage-based, and "you KO it" is only -1 [HYPOTHESIS]
 
 The type-only defense in S1 applies while your party has more than one usable Pokemon. When you are down to exactly one (`0x09073B6A` counts party slots with a species, not an egg, HP above 0), the defense part uses damage like singles, but a candidate you can KO only loses 1 point (the doubles branch at `0x090D7A3C` skips the singles -39/-15 and the "faints" flag). Not seen in a logged battle yet. With one of your Pokemon on the field but more in your party, the scorer still uses type matchups, against that one foe.
+
+## Doubles: mid-turn switch
+
+Step 1 of the mid-turn flow ("Switching: two separate flows") in double battles. Read in RR's ShouldSwitch `0x090D824C`; one check seen firing so far.
+
+### M1. Gates before the checks [TESTED]
+
+The 25% skip roll runs first, as in singles. It also needs a usable bench Pokemon that is not on the field and not already claimed by its partner's switch this turn. **Evidence:** in one doubles fight the skip fired 6 of about 20 times; Granbull "stopped before the checks" right after its partner Ambipom claimed the only remaining bench Pokemon.
+
+### M2. Just switched in: several checks are skipped [TESTED]
+
+A Pokemon that came in this turn or last (flag at `gNewBS+0x1CD+battler`, CFRU's switching cooldown) skips the absorb and "only bad moves" checks, and ShouldSwitch returns "stay" right before "avoid death". **Evidence:** Boltund's and Granbull's check lists stopped at that point on their first turn out and ran to the end on later turns.
+
+### M3. Which checks can fire in doubles [HYPOTHESIS, except where marked]
+
+| # | Check | In doubles |
+|---|---|---|
+| 1 | Absorb your predicted move | Only when its own best attack is weak: doubles damage points below 10 against **both** foes (below 6 in one sub-case). With both foes predicted to attack, one of the two predicted moves is picked at random (50%). The absorber comes in |
+| 2 | Pass a pending Wish | Also counts your second Pokemon as a KO threat |
+| 3 | Stop a locked move (Outrage, ...) | Looks at both foes' locked moves |
+| 4 | Perish Song about to end | As in singles |
+| 5 | Wonder Guard (RR `0x09350AC6`) | Not decoded |
+| 6 | Only bad moves left | Its moves must be bad against **both** live foes, and no Destiny Bond active. Then the best switch-in score comes in, with no extra requirement |
+| 7 | Natural Cure / Regenerator | Also counts your second Pokemon's KO threat; no "good switch-in" requirement |
+| 8 | Foe semi-invulnerable (Fly, Dig) | Looks at both foes |
+| 9 | About to fall asleep from Yawn | Stays instead if its best attack is worth more than 11 doubles damage points against either foe |
+| 10 | Asleep | Same chance as singles, no switch-in requirement |
+| 11 | Heavy secondary damage (Leech Seed, Curse, Toxic) | Mostly as in singles |
+| 12 | About to die | **Singles only** |
+| 13 | Attacking stat at -3 or worse | Physical-only at Attack -3, special-only at Sp. Atk -3, or accuracy -3; neither foe can KO it; the best switch-in must wall or resist all (flags `0x0A`); attacker roles only. **[TESTED]**: Ambipom (Attack -3, paralyzed) switched to Perrserker (walls Azumarill); at -1 and -2 it stayed |
+| 14 | Save a sweeper | **Singles only** |
+
+So in doubles the big singles reasons (about to die, save a sweeper) are off, and the rest need narrow situations: immunities against both foes, an absorber against a weak attacker, Yawn, sleep, Perish Song, heavy residual damage, or a big stat drop.
 
 ## Worked example: Hippopotas against your Psyduck
 

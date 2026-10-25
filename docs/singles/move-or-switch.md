@@ -58,7 +58,10 @@ Everything labeled "Radical Red" in this table is [HYPOTHESIS]. The base conditi
 - Prankster status into Dark types.
 - Two-turn moves when you can Protect or KO it during the charge.
 
-## 4. When it switches out [order from CFRU, presence found in ROM]
+## 4. When it switches out mid-turn [order from CFRU, presence found in ROM]
+
+This is step 1 of the **mid-turn swap** flow: a healthy Pokemon deciding at the start of a turn whether to switch instead of attacking. A post-KO replacement skips this step. Step 2, who comes in, is the scoring in `post-ko-switch-in.md` (see `../findings.md`, "Switching: two separate flows").
+
 
 Only checked on 75% of turns. Never when trapped. The first matching rule wins:
 
