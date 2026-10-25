@@ -1,6 +1,6 @@
 # Handoff: live AI predictor for Radical Red 4.1
 
-For a new Claude session. Read this, then `progress.md` (overall state) and `docs/verified.md` (the rules confirmed in game), then continue. Written 2026-10-25.
+For a new Claude session. Read this, then `progress.md` (overall state) and `docs/findings.md` (the rules confirmed in game), then continue. Written 2026-10-25.
 
 ## What the user is doing and how to help
 
@@ -23,8 +23,8 @@ The user's rules (also in memory files):
 
 ## What the model does now (`tools/mgba/rr_model.lua`)
 
-- **Singles move scores** at the move-choice entry `0x090C82C0`: rules 1-13, 15, 16 of `docs/verified.md` (KO / strongest, roles, Speed, healing, poison, boosts, Fake Out, Last Resort, U-turn pivot check). About 80% of decisions had the real choice among the predicted options; misses are mostly status moves not scored yet.
-- **Switch-ins** (singles and doubles): RR's scorer `0x090D7168` with bench damage 0 (rule 14), per-foe sum and type-only defense in doubles (S1-S3). Matched every logged doubles switch-in (19 of 19 on 2026-10-25). Each prediction carries the reason per foe.
+- **Singles move scores** at the move-choice entry `0x090C82C0`: rules 1-13, 15, 16 of `docs/findings.md` (KO / strongest, roles, Speed, healing, poison, boosts, Fake Out, Last Resort, U-turn pivot check). About 80% of decisions had the real choice among the predicted options; misses are mostly status moves not scored yet.
+- **Switch-ins** (singles and doubles): RR's scorer `0x090D7168` with bench damage 0 (the bench damage cache bug, rule 14), per-foe sum and type-only defense in doubles (S1-S3). Matched every logged doubles switch-in (19 of 19 on 2026-10-25). Each prediction carries the reason per foe.
 - **Doubles move choice: not predicted yet.** The rules are decoded and verified (D1-D6): doubles damage points + role table, partner "handled" targets, -30 no effect, Fake Out by role and threat, the target tie-break. Next big piece is building it.
 - Inputs read from RR's caches (`gNewBS = *0x0203E038`): damage `+0x2F0`, strongest move `+0x22E`, predicted move `+0x1EE` (`0xFFFF` = predicted switch), end-of-turn damage `+0x810`, CanKnockOut `+0x820`, Can2HKO `+0x830`, bench damage `+0x3F0` (stuck at 0), doubles best move `+0x7B0` / points `+0x7D0`.
 

@@ -1,14 +1,14 @@
--- Radical Red 4.1 AI predictor (singles), built only from the rules in docs/verified.md and data
+-- Radical Red 4.1 AI predictor (singles), built only from the rules in docs/findings.md and data
 -- read from RR's ROM and RAM. Every reads goes through `mem` (mGBA's `emu` or a fake).
 -- It predicts, it does not run the game's AI: where the rules need something not modelled yet the
 -- move is marked with "?" (low confidence) and kept at its known score.
 --
--- RR data used (evidence in docs/verified.md and the comments below):
+-- RR data used (evidence in docs/findings.md and the comments below):
 --   gBattleMoves 0x091521D0, 12 bytes: +0 effect, +1 power, +2 type, +3 accuracy, +5 secondary
 --     chance (0x090DB220), +7 priority (signed, 0x090DC344), +10 split (0 phys, 1 spec, 2 status).
 --   Type chart 0x09146CE2 + attackType * 0x18 + defenderType (0x09082090): 0 = x1, 5 = x0.5,
 --     20 = x2, 1 = immune.
---   Roles: RR's 0x090C40C4 singles path (docs/verified.md rule 8).
+--   Roles: RR's 0x090C40C4 singles path (docs/findings.md rule 8).
 --
 -- Inputs read from RR's own caches when present (opts.cache), so the test is on the scoring
 -- rules, not on damage formulas: AI damage per move gNewBS +0x2F0 (0x090DEAC4), strongest move
@@ -171,7 +171,7 @@ function M.damage(mem, atk, def, mv, roll)
 	return base * roll // 100
 end
 
--- RR role (docs/verified.md rule 8), singles path of 0x090C40C4, without the Choice/Assault Vest check.
+-- RR role (docs/findings.md rule 8), singles path of 0x090C40C4, without the Choice/Assault Vest check.
 local BOOST = {}
 for e = 0x0A, 0x10 do BOOST[e] = true end
 for e = 0x32, 0x38 do BOOST[e] = true end
@@ -647,7 +647,7 @@ function M.party_battle_mon(mem, pm)
 end
 
 -- Scores one candidate against the foe battle mon. Mirrors the RR scorer's rules
--- (docs/verified.md "switch-in" notes and the decompile lines cited there), with the model's damage.
+-- (docs/findings.md "switch-in" notes and the decompile lines cited there), with the model's damage.
 -- RR's bench damage cache (0x090DA8A4): u32 at gNewBS + 0x3F0 + (((side*6 + slot)*4 + foe)*4 + move)*4.
 -- It is only reset to -1 (not computed) by ClearCachedAIData 0x090C8BA4, which outside Hardcore's re-pick
 -- never runs, so it stays 0 and RR treats bench Pokemon as dealing no damage (seen in game: every

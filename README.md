@@ -2,7 +2,7 @@
 
 How the enemy AI in **Pokemon Radical Red 4.1** decides what to do each turn: which move it picks, when it switches, which Pokemon it sends in, and how it targets in double battles. Every finding comes from the game's actual code, not guessed from play.
 
-> **Status: beta.** All content in this repo is beta. Most findings come from reading the ROM's decompiled code; a first set has been verified in play and is collected in [`docs/verified.md`](docs/verified.md). Code findings and human verification are tracked separately (see "Tags" below): a finding gets **[VERIFIED]** only after it has been tested in game. I'm using these docs as a reference while playtesting, and will update them where the game behaves differently than the code suggests. Keep in mind that some behavior, in the code or in play, may come from a bug rather than what the code seems intended to do (the hazard re-use quirk in `docs/singles/move-or-switch.md` is one likely example), so "what the AI does" and "what the AI was meant to do" are not always the same.
+> **Status: beta.** All content in this repo is beta. Most findings come from reading the ROM's decompiled code; a first set has been tested in play (one playthrough, up to the second gym so far) and is collected in [`docs/findings.md`](docs/findings.md). Each finding carries a confidence tag (see "Tags" below), from [HYPOTHESIS] (code only) to [VERIFIED] (logs and our model's predictions both match the game). I'm using these docs as a reference while playtesting, and will update them where the game behaves differently than the code suggests. Keep in mind that some behavior, in the code or in play, may come from a bug rather than what the code seems intended to do (the hazard re-use quirk in `docs/singles/move-or-switch.md` is one likely example), so "what the AI does" and "what the AI was meant to do" are not always the same.
 
 ## What is Radical Red?
 
@@ -25,7 +25,7 @@ Start with [`docs/ai-guide.md`](docs/ai-guide.md), then:
 
 | Doc | Covers |
 |---|---|
-| [`docs/verified.md`](docs/verified.md) | Rules verified in the running game, with a worked example traced turn by turn |
+| [`docs/findings.md`](docs/findings.md) | Rules seen in the running game, tagged by confidence, with the evidence and a worked example traced turn by turn |
 | [`docs/singles/move-or-switch.md`](docs/singles/move-or-switch.md) | Singles: how it scores moves, when it switches out, Hardcore's anti-switch rule |
 | [`docs/singles/post-ko-switch-in.md`](docs/singles/post-ko-switch-in.md) | Singles: which Pokemon it sends in after a faint or a switch |
 | [`docs/doubles/moves-and-targets.md`](docs/doubles/moves-and-targets.md) | Doubles: roles, move scoring, target choice, and why it feels random |
@@ -38,8 +38,8 @@ A few highlights:
 - Every trainer uses the full smart AI. There are no "dumb" route trainers.
 - Trainers never use items, and on 25% of turns the AI does not consider switching at all.
 - The AI assumes the 9th of the 16 damage rolls (93%) when judging KOs.
-- **Switch-ins never count their own damage** (verified in game): the AI picks replacements on Speed and on how well they take your hits, never on how hard they hit you. In doubles, being faster than both of your Pokemon is worth the most.
-- In doubles, ties between targets are broken by KOs (counting the partner's hit), then a 25% roll for the harder-hit target, else a coin flip (verified).
+- **Switch-ins do not count their own damage** (the bench damage cache bug, [`docs/findings.md`](docs/findings.md) rule 14, [OBSERVED] in every switch-in logged so far): the AI picks replacements on Speed and on how well they take your hits, not on how hard they hit you. In doubles, being faster than both of your Pokemon is worth the most.
+- In doubles, ties between targets are broken by KOs (counting the partner's hit), then a 25% roll for the harder-hit target, else a coin flip ([TESTED]).
 - Difficulty modes share the same AI. The only difference is Hardcore's anti-switch rule.
 
 ## How this was compiled
@@ -52,13 +52,14 @@ A few highlights:
 
 ## Tags
 
-| Tag | Meaning | Human-verified? |
+| Tag | Meaning | Seen in game? |
 |---|---|---|
-| **[ROM]** | Found by reading Radical Red's own decompiled code. | No |
-| **[CFRU]** | From the CFRU source, with the surrounding Radical Red code matching. | No |
-| **[VERIFIED]** | Tested in game by a person and the game behaves as described. | Yes |
+| **[HYPOTHESIS]** | Read in Radical Red's own decompiled code, not tested yet. **[HYPOTHESIS, CFRU]**: from the CFRU source, with the surrounding Radical Red code matching. | No |
+| **[OBSERVED]** | A behavior seen repeatedly in game that the code found so far does not explain. | Yes |
+| **[TESTED]** | A code hypothesis supported by in-game output from our tools (viewer logs, repeat tests, traces). | Yes |
+| **[VERIFIED]** | Tested, and our model's predictions also match the real game. | Yes |
 
-[ROM] and [CFRU] are code findings only. [VERIFIED] findings are collected in [`docs/verified.md`](docs/verified.md).
+All of these are leading hypotheses from a limited sample. [OBSERVED], [TESTED] and [VERIFIED] findings are collected in [`docs/findings.md`](docs/findings.md) with the evidence and its size.
 
 Several CFRU behaviors turned out to be different in Radical Red, for example the hardcoded smart AI for all trainers, the removed item use, the reworked anti-switch counter and changes to Protect, Taunt, Counter, Sucker Punch and hazard scoring.
 
@@ -83,7 +84,7 @@ The scripts are in [`tools/`](tools/README.md). You need your own copies of both
 
 - The meaning of game flag `0x10C0`, which blocks AI switching when set.
 - Which bosses use special battle IDs `0x10` / `0x12`, which have small hazard and ability exceptions.
-- Most findings are still code-only; see [`docs/verified.md`](docs/verified.md) for what has been checked in game.
+- Most findings are still code-only; see [`docs/findings.md`](docs/findings.md) for what has been checked in game.
 
 ## Disclaimer
 

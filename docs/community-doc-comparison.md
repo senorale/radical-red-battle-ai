@@ -29,7 +29,7 @@ Status key:
 
 The last row is a minor wording point, but it can flip a switch-in decision when stats are close.
 
-**Correction (2026-10-24, verified in game):** we first listed "kill flags are gone" as a contradiction, because the code still has the +31 KO / +8 revenge kill / +2 2HKO rules (`0x090D7168`, KO check `0x090DAA78` -> `0x090DA9D0` -> `0x090DA8A4`). In practice the community doc is right: those rules read the switch-in's damage from a cache that is never reset, so every benched Pokemon looks like it does 0 damage and the KO points never fire. Resetting the cache by hand made them appear and changed the pick. See `docs/verified.md` rule 14.
+**Correction (2026-10-24, verified in game):** we first listed "kill flags are gone" as a contradiction, because the code still has the +31 KO / +8 revenge kill / +2 2HKO rules (`0x090D7168`, KO check `0x090DAA78` -> `0x090DA9D0` -> `0x090DA8A4`). In practice the community doc is right because of the bench damage cache bug: those rules read the switch-in's damage from a cache that is never reset, so every benched Pokemon looks like it does 0 damage and the KO points never fire. Resetting the cache by hand made them appear and changed the pick. See `docs/findings.md` rule 14.
 
 ## 2. Matches exactly (and corrected our own guide)
 
@@ -74,8 +74,8 @@ Extra details the community doc does not mention:
 | Community claim | Status |
 |---|---|
 | Resist all +17, Outspeeds +14, Walls +2, Takes half -1 | Matches ROM code |
-| No KO points | **Matches in game** [VERIFIED]: the KO code exists but never fires (rule 14) |
-| "In doubles the AI still looks for super effective and resisting all moves literally" | **Matches** [VERIFIED]: doubles uses type matchups instead of damage calcs while your party has more than one usable Pokemon (`docs/verified.md` S1) |
+| No KO points | **Matches in game** [OBSERVED]: the KO code exists but never fires (bench damage cache bug, `docs/findings.md` rule 14) |
+| "In doubles the AI still looks for super effective and resisting all moves literally" | **Matches** [VERIFIED]: doubles uses type matchups instead of damage calcs while your party has more than one usable Pokemon (`docs/findings.md` S1) |
 
 ## 4. Not in the community doc
 
@@ -100,7 +100,7 @@ All of these were found in the ROM code (see `docs/ai-guide.md`, `docs/singles/m
 - **How doubles actually picks moves and targets.** The community doc has the role priority ladders but not the rest of the doubles logic (all found in the ROM code, see `docs/doubles/moves-and-targets.md` and `docs/doubles/post-ko-switch-in.md`):
   - **How roles are assigned** from the moveset. Only All-Out, Setup and Trick Room Attackers count as "attackers".
   - **Only one damaging move per target gets the ladder bonus.** Its 0 to 12 score is +4 per foe hit, +2 per KO, +1 if strongest, reduced for weak hits, and -3 for hitting its partner. Other attacks stay at base 100.
-  - **Random tie-breaks** between equal moves, and between equal targets for non-attacker roles. Attackers prefer KOs, then threats, then most damage only 25% of the time (verified: `docs/verified.md` D6).
+  - **Random tie-breaks** between equal moves, and between equal targets for non-attacker roles. Attackers prefer KOs, then threats, then most damage only 25% of the time (verified: `docs/findings.md` D6).
   - **Never targets its partner** below a score of 101. Ignores spread moves 75% of the time when you have Wide Guard.
   - **Speed-order partner coordination**: the slower AI mon accounts for its faster partner's chosen move and target.
 

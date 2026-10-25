@@ -1,8 +1,8 @@
 # Radical Red AI research notes (working file)
 
-> Raw working notes from the first code reading. Where they disagree with `verified.md` (rules tested in game) or the topic docs, those win. Known example: the switch-in KO points described here never fire in game (`verified.md` rule 14).
+> Raw working notes from the first code reading. Where they disagree with `findings.md` (rules tested in game) or the topic docs, those win. Known example: the switch-in KO points described here never fire in game (the bench damage cache bug, `findings.md` rule 14).
 
-Source: CFRU commit b637a27 at `vendor/cfru/src/Battle_AI/`. Pieces found in the rr.gba decompile noted as [ROM]. Code findings only, nothing here is human-verified in play.
+Source: CFRU commit b637a27 at `vendor/cfru/src/Battle_AI/`. Pieces found in the rr.gba decompile noted as [HYPOTHESIS]. Code findings only, nothing here is human-verified in play.
 
 ## ROM DECOMPILE RESULTS (Ghidra 12.1.4 decompile of rr.gba)
 - ROM BattleAI_DoAIProcessing 0x090C6F3C: same loop as CFRU (32-entry table, 4 moves, DO_NOT_ATTACK bit).
@@ -66,8 +66,8 @@ Source: CFRU commit b637a27 at `vendor/cfru/src/Battle_AI/`. Pieces found in the
 - ROM random points match CFRU (absorb 50% vs stall, Regenerator 50%, asleep 50%(+50%), Leech Seed 25%, save sweeper 50/75%, ties 50%) + RR 25% skip. RR uses Random2 here.
 
 ## Global facts
-- [ROM] AI script table at 0x091491E0: [0] Negatives 0x090C904C, [1] SemiSmart 0x090D6998, [2] Positives 0x090D10D4, [29] Roaming, [30] Safari, [31] FirstBattle.
-- [ROM] Trainer table at 0x0823EAC8 (pointer at 0x0800FC00), 743 entries. aiFlags: 574 trainers = 0x1 (Negatives only), 168 = 0x7 (all three). Smart = gym leaders, E4, rival Terry (27 entries), Giovanni, Archer/Ariana, Lance, Brendan/May, many named trainers. Grunts and route trainers mostly 0x1.
+- [HYPOTHESIS] AI script table at 0x091491E0: [0] Negatives 0x090C904C, [1] SemiSmart 0x090D6998, [2] Positives 0x090D10D4, [29] Roaming, [30] Safari, [31] FirstBattle.
+- [HYPOTHESIS] Trainer table at 0x0823EAC8 (pointer at 0x0800FC00), 743 entries. aiFlags: 574 trainers = 0x1 (Negatives only), 168 = 0x7 (all three). Smart = gym leaders, E4, rival Terry (27 entries), Giovanni, Archer/Ariana, Lance, Brendan/May, many named trainers. Grunts and route trainers mostly 0x1.
 - The AI is omniscient: it reads player's real moves, ability, item, stats, speed (gBattleMons). No "revealed info" gating found yet in master.
 - Each turn: CalculateAIPredictions once: strongest move per pair, can KO / 2HKO, doubles killing scores, predicted move of every battler (incl. player) = run Negatives+Positives (flags=7) over that battler's moveset vs each target; best viability <100 => predicted to switch; ties random.
 - Order per AI mon: AI_TrySwitchOrUseItem (trainer battles): ShouldSwitch -> else ShouldAIUseItem -> else choose move.

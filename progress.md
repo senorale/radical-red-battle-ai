@@ -2,7 +2,7 @@
 
 Where the research stands, so a new session can pick up without re-deriving it. Last updated 2026-10-25.
 
-**Current task:** understanding and predicting the AI in the user's live doubles fights (switch-ins predicted; doubles move choice decoded, model not built yet). Start with `HANDOFF.md`, then `docs/verified.md`.
+**Current task:** understanding and predicting the AI in the user's live doubles fights (switch-ins predicted; doubles move choice decoded, model not built yet). Start with `HANDOFF.md`, then `docs/findings.md`.
 
 ## Goal
 
@@ -10,7 +10,7 @@ Understand how Radical Red 4.1's enemy AI chooses moves, switches and switch-ins
 
 ## Ground rules
 
-- **[VERIFIED] means checked in the running game.** Those rules live in `docs/verified.md`. [ROM] and [CFRU] tags are code findings only.
+- **Tags:** [HYPOTHESIS] code only, [OBSERVED] seen but unexplained, [TESTED] code plus our tools' in-game output, [VERIFIED] tested plus the model's predictions matching. All leading hypotheses from a limited sample. The tested ones live in `docs/findings.md`. [HYPOTHESIS] and [HYPOTHESIS, CFRU] tags are code findings only.
 - **Check Radical Red's own code, not CFRU.** CFRU source is only a map for what to look for; every rule needs RR addresses (several RR changes were found this way, see below).
 - **The docs in this repo are not evidence.** Re-check a claim in the ROM (decompile, then raw assembly) before relying on it, and cite the address range.
 - **A Ghidra decompile is a hint, not proof.** When it matters, confirm in assembly (`tools/ghidra/asm.sh`).
@@ -38,7 +38,7 @@ Validate after any tooling change: test on `09060000`-`090E8000` (and `09000000`
 
 Since 2026-10-25 it also logs, per decision and per target, HP, RR's damage both ways and RR's KO verdicts; switch blocks start with the field status and carry the switch-in prediction with a reason per slot (singles and doubles). `tools/mgba/watch_switchins.py` follows the log and prints only switch-ins.
 
-`tools/mgba/run_repeat_test.sh` replays a savestate N times at uncapped speed with a fresh `Random2` seed per run, records several turns per run (`RR_TEST_DECISIONS`), sends out the next Pokemon after a faint, and can log any register at any address (`RR_TEST_TRACE`). `summarize_trace.py` turns a traced run into a per-turn list of score changes and the rule behind each. This is how every rule in `docs/verified.md` was confirmed.
+`tools/mgba/run_repeat_test.sh` replays a savestate N times at uncapped speed with a fresh `Random2` seed per run, records several turns per run (`RR_TEST_DECISIONS`), sends out the next Pokemon after a faint, and can log any register at any address (`RR_TEST_TRACE`). `summarize_trace.py` turns a traced run into a per-turn list of score changes and the rule behind each. This is how every rule in `docs/findings.md` was confirmed.
 
 ### Matching recompilation (paused, 2026-10-23)
 
@@ -50,7 +50,7 @@ Tried compiling CFRU's AI source with CFRU's flags and matching it byte for byte
 
 ### Findings so far
 
-Verified in game (details and evidence in `docs/verified.md`): the AI picks its action at turn start before the player; the RR-only 25% no-switch roll; `Random2` is a fixed formula (same savestate, same decision); absorb switch; random move ties; the Speed-drop +3 coin (RR adds the coin); KO / slow-KO / strongest-move bonuses; roles (set from the AI's own moves, recomputed each turn); -15 for moves with no effect. Added 2026-10-24/25: switch-ins never count bench damage (rule 14, shown by resetting the cache live); Last Resort -10 (15); the U-turn pivot check (16); doubles move selection D1-D6 (Speed-order decisions, doubles damage points and role table, partner-handled targets, -30 no effect, Fake Out by role and threat, the target tie-break with its 25% roll); doubles switch-ins S1-S3 (per-foe sum, type-only defense).
+Verified in game (details and evidence in `docs/findings.md`): the AI picks its action at turn start before the player; the RR-only 25% no-switch roll; `Random2` is a fixed formula (same savestate, same decision); absorb switch; random move ties; the Speed-drop +3 coin (RR adds the coin); KO / slow-KO / strongest-move bonuses; roles (set from the AI's own moves, recomputed each turn); -15 for moves with no effect. Added 2026-10-24/25: switch-ins never count bench damage (the bench damage cache bug, rule 14, shown by resetting the cache live); Last Resort -10 (15); the U-turn pivot check (16); doubles move selection D1-D6 (Speed-order decisions, doubles damage points and role table, partner-handled targets, -30 no effect, Fake Out by role and threat, the target tie-break with its 25% roll); doubles switch-ins S1-S3 (per-foe sum, type-only defense).
 
 Code findings:
 
@@ -80,7 +80,7 @@ Each of these produced wrong decompiles before it was fixed; they explain why ol
 
 ## Next steps
 
-1. **Doubles move-choice model** (`tools/mgba/rr_model.lua`) from `docs/verified.md` D1-D6, then compare it with the user's doubles logs (every target's scores, HP, damage both ways are logged).
+1. **Doubles move-choice model** (`tools/mgba/rr_model.lua`) from `docs/findings.md` D1-D6, then compare it with the user's doubles logs (every target's scores, HP, damage both ways are logged).
 2. **Singles status moves** still unscored (list in `HANDOFF.md`).
 3. **Voluntary switch prediction** (14 ShouldSwitch checks are logged, not predicted).
 4. Open questions: where RR doubles the doubles "avoid" penalties (-30 for no effect); doubles role assignment (Perrserker = Utility); where the bench damage cache gets its zeros; Ground into airborne = 0; Iron Head 109 on a non-KO (2026-10-24, frame 26462).
