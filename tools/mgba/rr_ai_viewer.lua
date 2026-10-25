@@ -46,6 +46,7 @@ local model_ok, Model = pcall(require, "rr_model")
 local SITE_CHOICE_ENTRY = 0x090C82C0
 local predictions = {} -- per AI battler
 local LOG_DIR -- set in the diagnostics section below; decisions.jsonl goes here
+local log -- set in the diagnostics section below
 local SITE_SINGLES = 0x090C83AC
 local SITE_DOUBLES = 0x090C875C
 local SITE_EXIT = 0x090C837A
@@ -98,8 +99,9 @@ end
 local function on_choice_entry()
 	if not model_ok or (emu:read32(0x02022B4C) & 1) ~= 0 then return end -- singles only
 	local b = emu:read8(0x02023BC4)
-	local ok, p = pcall(Model.predict, emu, b, b ~ 1, { cache = true })
+	local ok, p = xpcall(Model.predict, debug.traceback, emu, b, b ~ 1, { cache = true })
 	predictions[b] = ok and p or { error = tostring(p) }
+	if not ok then log("predict error: " .. tostring(p)) end
 end
 
 local function json_escape(v) return (tostring(v):gsub('[%c"\\]', function(c) return string.format("\\u%04x", c:byte()) end)) end
@@ -116,6 +118,20 @@ local function log_decision(battler, runs, choice, pred)
 		end
 		parts[#parts + 1] = string.format('"target":"%s","moves":[%s],"actual":[%s]', json_escape(species_name(s.target)),
 			table.concat(mv, ","), table.concat(sc, ","))
+		-- Could it KO: HP of both sides, RR's damage per move (null = not computed) and RR's own
+		-- CanKnockOut / Can2HKO verdicts in both directions (null = not computed this turn).
+		if model_ok then
+			local function flag(v) return v == nil and "null" or tostring(v) end
+			local dm = {}
+			for i = 0, 3 do dm[#dm + 1] = tostring(Model.cached_damage(emu, battler, s.target, i) or "null") end
+			local function hp(b) return emu:read16(BATTLE_MONS + b * MON_SIZE + 0x28), emu:read16(BATTLE_MONS + b * MON_SIZE + 0x2C) end
+			local ah, am = hp(battler)
+			local th, tm = hp(s.target)
+			parts[#parts + 1] = string.format('"ai_hp":[%d,%d],"target_hp":[%d,%d],"dmg":[%s],"ai_ko":%s,"ai_2hko":%s,"you_ko":%s,"you_2hko":%s',
+				ah, am, th, tm, table.concat(dm, ","),
+				flag(Model.cached_ko(emu, battler, s.target, 1)), flag(Model.cached_ko(emu, battler, s.target, 2)),
+				flag(Model.cached_ko(emu, s.target, battler, 1)), flag(Model.cached_ko(emu, s.target, battler, 2)))
+		end
 	end
 	-- Doubles: every target the AI scored, and the target it finally chose (gBankTarget at the exit).
 	if #runs > 1 or (emu:read32(0x02022B4C) & 1) ~= 0 then
@@ -135,6 +151,8 @@ local function log_decision(battler, runs, choice, pred)
 			po[#po + 1] = string.format("%.3f", pred.odds[i] or 0)
 		end
 		parts[#parts + 1] = string.format('"role":%d,"predicted":[%s],"odds":[%s]', pred.role, table.concat(ps, ","), table.concat(po, ","))
+	elseif pred and pred.error then
+		parts[#parts + 1] = string.format('"predict_error":"%s"', json_escape(pred.error))
 	end
 	pcall(function()
 		local f = io.open(LOG_DIR .. "decisions.jsonl", "a")
@@ -193,7 +211,6 @@ local function on_exit()
 	redraw()
 end
 
-local log -- set in the diagnostics section below
 
 local ACTIVE_BATTLER = 0x02023BC4
 local GBATTLE_STRUCT = 0x02023FE8
@@ -286,6 +303,15 @@ local function pick_reason(battler, slot, scores, preset_slot, best, second)
 	return lines
 end
 
+-- Experiment switch: while logs/reset_bench_cache exists, set the scorer's side of RR's bench damage
+-- cache (gNewBS + 0x3F0, read by 0x090DA8A4) to 0xFFFFFFFF ("not computed") at every scorer entry,
+-- so RR calculates the real damage. This changes the game's AI; off when the file is absent.
+local function reset_bench_enabled()
+	if not LOG_DIR then return false end
+	local f = io.open(LOG_DIR .. "reset_bench_cache", "r")
+	if f then f:close(); return true end
+	return false
+end
 local function report_switch(battler, slot, kind, extra)
 	local side = battler & 1
 	local nbs = emu:read32(GNEWBS)
@@ -294,6 +320,9 @@ local function report_switch(battler, slot, kind, extra)
 	local lines = { string.format("frame %d  %s (%s) %s -> slot %d %s", emu:currentFrame(), species_name(battler),
 		POSITION[battler] or battler, kind, slot, to_name) }
 	for _, l in ipairs(extra) do lines[#lines + 1] = l end
+	if reset_bench_enabled() then
+		lines[#lines + 1] = "  EXPERIMENT: bench damage cache was reset to 0xFFFFFFFF before each scorer run (logs/reset_bench_cache)"
+	end
 	local scores, rows = {}, {}
 	for i = 0, 5 do
 		local id, name = party_species(side, i)
@@ -303,8 +332,21 @@ local function report_switch(battler, slot, kind, extra)
 			local f = emu:read8(nbs + 0x878 + side * 6 + i)
 			local mark = (i == slot) and "  <= CHOSEN" or ""
 			if emu:read16(0x02023BCE + battler * 2) == i then mark = "  (on field)" end
-			rows[#rows + 1] = string.format("    %d %-11s hp %3d  score %4d  flags 0x%02X %s%s", i, name, hp, scores[i], f,
-				flags_text(f), mark)
+			-- RR's bench damage cache (0x090DA8A4): u32 per move at gNewBS + 0x3F0 + (((side*6 + slot)*4
+			-- + foe)*4 + move)*4, recomputed only when it holds 0xFFFFFFFF ("--" here).
+			local bench = {}
+			for foe = (side ~ 1), 3, 2 do
+				if foe < emu:read8(0x02023BCC) then -- gBattlersCount
+					local d = {}
+					for k = 0, 3 do
+						local v = emu:read32(nbs + 0x3F0 + ((((side * 6 + i) * 4 + foe) * 4) + k) * 4)
+						d[#d + 1] = v == 0xFFFFFFFF and "--" or tostring(v)
+					end
+					bench[#bench + 1] = string.format("vs %d (hp %d): %s", foe, emu:read16(BATTLE_MONS + foe * MON_SIZE + 0x28), table.concat(d, "/"))
+				end
+			end
+			rows[#rows + 1] = string.format("    %d %-11s hp %3d  score %4d  flags 0x%02X %s%s  | bench dmg %s", i, name, hp, scores[i], f,
+				flags_text(f), mark, table.concat(bench, ", "))
 		end
 	end
 	return lines, scores, rows
@@ -359,7 +401,8 @@ end
 local turn_switch_pred = {} -- per AI battler: switch-in prediction from the start of its turn
 local function predict_switchin(b)
 	if not model_ok or (emu:read32(0x02022B4C) & 1) ~= 0 or b & 1 ~= 1 then return nil end
-	local ok, p = pcall(Model.predict_switchin, emu, b, b ~ 1)
+	local ok, p = xpcall(Model.predict_switchin, debug.traceback, emu, b, b ~ 1)
+	if not ok then log("switch-in predict error: " .. tostring(p)) end
 	return ok and p or { error = tostring(p) }
 end
 -- The switch-in scorer runs at the start of the AI's turn (AI_TrySwitchOrUseItem 0x090C802C); at a faint
@@ -379,8 +422,19 @@ local function on_ko_picked()
 	if ctx then ctx.best, ctx.second = read_best(emu:read8(ACTIVE_BATTLER)) end
 end
 local function on_scorer()
-	local ctx = ko_ctx[emu:read8(ACTIVE_BATTLER)]
+	local battler = emu:read8(ACTIVE_BATTLER)
+	local ctx = ko_ctx[battler]
 	if ctx then ctx.rescored = true end
+	if reset_bench_enabled() then
+		local nbs, side = emu:read32(GNEWBS), battler & 1
+		for slot = 0, 5 do
+			for foe = 0, 3 do
+				local x = (side * 6 + slot) * 4 + foe
+				for k = 0, 3 do emu:write32(nbs + 0x3F0 + (x * 4 + k) * 4, 0xFFFFFFFF) end
+			end
+		end
+		log(string.format("bench cache reset for side %d before the scorer (frame %d)", side, emu:currentFrame()))
+	end
 end
 local function on_ko_switch()
 	local battler = emu:read8(ACTIVE_BATTLER)
