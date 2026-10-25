@@ -343,8 +343,22 @@ function M.predict(mem, ai_b, target_b, opts)
 	local hp_pct = ai.max_hp > 0 and (ai.hp * 100 // ai.max_hp) or 0
 
 	local out = { role = role, moves = {} }
+	-- Starting scores: RR's AI setup (0x090C7880, run just before the move choice) sets 0 for moves
+	-- it cannot use (Choice lock, Disable, no PP, ...); the scripts then leave them at 0.
+	local start = {}
+	if opts and opts.cache then
+		local aist = mem:read32(mem:read32(0x02023FF4) + 0x14)
+		for i = 0, 3 do start[i] = mem:read8(aist + 4 + i) end
+	end
+	local first_turn = mem:read8(0x02023E0C + ai_b * 0x1C + 0x16) ~= 0 -- gDisableStructs isFirstTurn
 	for i, mv in pairs(mvs) do
 		local r = { name = mv.name, score = 100, notes = {}, unknown = false }
+		if start[i] == 0 then
+			r.score = 0
+			r.notes[#r.notes + 1] = "cannot be used (starting score 0)"
+			out.moves[i] = r
+			goto continue
+		end
 		local function add(n, why) r.score = r.score + n; r.notes[#r.notes + 1] = string.format("%+d %s", n, why) end
 		local eff = M.effectiveness(mem, mv.type, foe)
 		if mv.split ~= 2 then
@@ -357,6 +371,12 @@ function M.predict(mem, ai_b, target_b, opts)
 				local goes_first = (foe_pred ~= 0 and mv.priority > foe_prio) or (foe_pred == 0 and mv.priority > 0) or ai_first_base
 				local acc = mv.accuracy == 0 and 101 or mv.accuracy
 				local ko = dmg[i] >= foe.hp and acc == best_ko_acc
+				if mv.effect == 0x9E then
+					-- Fake Out: -10 after the first turn out (Negatives); +8 in singles on the first turn when
+					-- it works (ShouldUseFakeOut 0x090C562C, bonus 0x090C67A4). Choice-item case not modelled.
+					if not first_turn then add(-10, "Fake Out after the first turn")
+					elseif mv.id == 0xFC then add(8, "Fake Out on the first turn") end
+				end
 				if ko and goes_first then add(9, "KO, goes first")
 				elseif ko and not has_protect then add(SLOW_KO[role] or 0, "KO, goes second (role)")
 				elseif i == strongest then add(2, "strongest move") end
@@ -395,6 +415,7 @@ function M.predict(mem, ai_b, target_b, opts)
 			end
 		end
 		out.moves[i] = r
+		::continue::
 	end
 
 	-- Odds of each move being chosen: enumerate the coins, top score wins, ties split evenly.
