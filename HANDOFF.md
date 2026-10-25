@@ -30,7 +30,7 @@ Inputs read from RR's own caches (so tests are about the scoring rules, not form
 
 Rules modelled (details and evidence in `docs/verified.md`, rules 1-13): roles (RR's table, `0x090C40C4`); KO first +9 / slow KO by role (`0x090C69F4`) / strongest +2; best-accuracy KO move only; RR's MoveWouldHitFirst quirk (your higher priority ignored, `0x090DA0A6`); Speed with weather abilities (`0x0906E320`); healing -10/-9 by HP; poison/Toxic (+role bonus, -10 if you cannot be poisoned); Stockpile and stat boosts via the "good idea to boost" check (`0x090C3C64`); Speed-drop +3 coin; -15 no effect; Ground into airborne = 0 (observed, code spot not found); Fake Out (+8 first turn, -10 after); unusable moves 0; ties and coins as odds. Damage fallback formula covers RR abilities/items/weather and multi-hit = 2 hits; 145 of 183 cached values matched exactly.
 
-Switch-in model: RR's scorer rules (`0x090D7168`) with species base stats (`0x097B98EC`, 28 bytes). **Key finding:** RR's bench damage cache is only reset by `ClearCachedAIData` `0x090C8BA4` (called only from Hardcore's re-pick `0x090C8F04`), so it stays 0 and the AI gives bench Pokemon no KO/2HKO credit.
+Switch-in model: RR's scorer rules (`0x090D7168`) with species base stats (`0x097B98EC`, 28 bytes). **Key finding (verified, `docs/verified.md` rule 14):** RR's bench damage cache (`gNewBS+0x3F0`) is never set to "not computed" (`0xFFFFFFFF`; `ClearCachedAIData` `0x090C8BA4` does not touch it), so it stays 0 and switch-ins never get KO/2HKO credit. Confirmed by resetting the cache live: real damage, KO points and a different pick appeared.
 
 ## Open items, in rough priority
 
