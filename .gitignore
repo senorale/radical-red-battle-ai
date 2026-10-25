@@ -23,5 +23,6 @@ vendor/
 # Ghidra project, symbols and decompiled output (derived from the ROM)
 tools/ghidra/build/
 
-# mGBA viewer logs (contain game data)
-tools/mgba/logs/
+# mGBA viewer logs (contain game data); the folder itself is tracked so the viewer can write into it
+tools/mgba/logs/*
+!tools/mgba/logs/.gitkeep

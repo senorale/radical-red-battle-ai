@@ -608,6 +608,17 @@ local function install(why)
 	log("install(" .. tostring(why) .. "): " .. table.concat(parts, " "))
 	buffer:clear()
 	buffer:print("RR AI viewer ready. Scores appear when the enemy picks a move.\n")
+	-- Warn when the log folder is missing or not writable: the on-screen scores still work, but
+	-- decisions.jsonl (used by watch_switchins.py and the analysis tools) would silently stay empty.
+	if LOG_DIR then
+		local f = io.open(LOG_DIR .. "viewer.log", "a")
+		if f then f:close() else
+			local w = "WARNING: cannot write to " .. LOG_DIR .. " - create that folder to get decisions.jsonl."
+			buffer:print(w .. "\n")
+			table.insert(history, w)
+			pcall(function() console:log("[rr-ai] " .. w) end)
+		end
+	end
 end
 
 callbacks:add("start", function() install("start") end)

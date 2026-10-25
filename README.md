@@ -67,6 +67,13 @@ Several CFRU behaviors turned out to be different in Radical Red, for example th
 
 Scripts for mGBA that stop the game inside the AI's own functions and print what it computed: every move's score, ties, the move chosen, and for switches the reason and the switch-in scores. They read the real decisions; nothing is simulated.
 
+> **Quick start**
+> - **You need:** the **mGBA 0.11 development build** (the stable 0.10 release has no breakpoint API and will not work), and your own Radical Red 4.1 ROM (SHA1 above, not included). Python 3 is only needed for the optional extras below.
+> - **Start:** open your ROM in mGBA, then Tools > Scripting > File > Load script > `tools/mgba/rr_ai_viewer.lua`. On macOS, `tools/mgba/run_viewer.sh` does both if the ROM is at `roms/rr.gba`.
+> - **You will see:** a "RR AI scores" tab in the Scripting window that says "RR AI viewer ready". Start a trainer battle: each enemy decision, switch check and switch-in appears there. Wild Pokemon do not show (they pick moves at random).
+> - **Logs:** everything is also written to `tools/mgba/logs/` (`decisions.jsonl`, `viewer.log`). If the tab shows a "cannot write" warning, create that folder.
+> - **Optional (Python 3):** `python3 -I tools/mgba/watch_switchins.py` in a terminal prints switch checks and switch-ins as they happen; `tools/mgba/run_repeat_test.sh` replays a savestate many times (see below).
+
 1. Get the **mGBA 0.11 development build** (stable 0.10 has no breakpoint API): https://mgba.io/downloads.html#development-downloads
 2. Put your own Radical Red 4.1 ROM at `roms/rr.gba` (SHA1 above; not included).
 3. Start it with the viewer: `tools/mgba/run_viewer.sh` (macOS, mGBA in `/Applications`), or open the ROM in mGBA and load `tools/mgba/rr_ai_viewer.lua` with Tools > Scripting > File > Load script.
