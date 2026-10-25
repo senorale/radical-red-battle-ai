@@ -658,11 +658,21 @@ local function bench_damage(mem, side, slot, foe_b, k)
 	return v
 end
 
-local function score_candidate(mem, cand, foe, side, slot, foe_b)
-	local score, flags = 0, 0
-	cand.battler = side
-	local cspd, fspd = M.speed(mem, cand), M.speed(mem, foe)
-	if cspd >= fspd then score = score + 14; flags = flags | 0x40 end
+-- Score changes with a reason, so the viewer can show why a candidate got its score.
+local function bump(s, n, flag, why)
+	if n < 0 then s.score = s.score >= -n and s.score + n or 0 else s.score = s.score + n end
+	if flag then s.flags = s.flags | flag end
+	s.why[#s.why + 1] = string.format("%+d %s", n, why)
+end
+local function walls(cand, foe, phys, spec)
+	local fa = staged(foe.attack, foe.stages.atk - 6)
+	local fs = staged(foe.sp_attack, foe.stages.spa - 6)
+	return not ((phys and cand.defense <= fa) or (spec and cand.sp_defense <= fs)),
+		string.format("Def %d vs Atk %d, SpD %d vs SpA %d", cand.defense, fa, cand.sp_defense, fs)
+end
+
+-- Offense and defense against one foe (singles, or doubles with one foe left). Adds to s.
+local function score_vs_foe_damage(mem, cand, foe, side, slot, foe_b, s, doubles)
 	local ko, two, usable, prio_ko = false, false, false, false
 	for i = 0, 3 do
 		local id = cand.moves[i]
@@ -677,15 +687,15 @@ local function score_candidate(mem, cand, foe, side, slot, foe_b)
 		end
 	end
 	if ko then
-		score = score + 31; flags = flags | 1
+		bump(s, 31, 1, "KOs")
 		if prio_ko then
-			score = score + 8; flags = flags | 4
-			if flags & 0x40 == 0 then score = score + 14; flags = flags | 0x40 end
+			bump(s, 8, 4, "KOs with priority")
+			if s.flags & 0x40 == 0 then bump(s, 14, 0x40, "priority KO counts as outspeeding") end
 		end
 	elseif not usable then
-		return -1, flags
+		return false
 	elseif two then
-		score = score + 2; flags = flags | 0x10
+		bump(s, 2, 0x10, "2HKOs")
 	end
 	local faints, weak, normal, phys, spec = false, false, 0, false, false
 	for i = 0, 3 do
@@ -701,27 +711,87 @@ local function score_candidate(mem, cand, foe, side, slot, foe_b)
 			end
 		end
 	end
-	if faints then
-		if flags & 0x40 == 0 then
-			flags = flags | 0x80
-			score = score >= 39 and score - 39 or 0
-		elseif flags & 1 == 0 then
-			score = score >= 15 and score - 15 or 0
-		else
-			score = score >= 1 and score - 1 or 0
-		end
+	if faints and doubles then
+		bump(s, -1, nil, "you KO it (doubles: only -1)") -- 0x090D7A3C -> 0x090D792E
+	elseif faints then
+		if s.flags & 0x40 == 0 then bump(s, -39, 0x80, "you KO it and it is slower")
+		elseif s.flags & 1 == 0 then bump(s, -15, nil, "you KO it")
+		else bump(s, -1, nil, "you KO it, it KOs you") end
 	elseif weak then
-		score = score >= 1 and score - 1 or 0
+		bump(s, -1, nil, "you 2HKO it")
 	elseif normal == 0 then
-		score = score + 17; flags = flags | 2
+		bump(s, 17, 2, "resists all your moves")
 	else
-		local fa = staged(foe.attack, foe.stages.atk - 6)
-		local fs = staged(foe.sp_attack, foe.stages.spa - 6)
-		if not ((phys and cand.defense <= fa) or (spec and cand.sp_defense <= fs)) then
-			score = score + 2; flags = flags | 8
+		local ok, txt = walls(cand, foe, phys, spec)
+		if ok then bump(s, 2, 8, "walls you (" .. txt .. ")") else s.why[#s.why + 1] = "no wall (" .. txt .. ")" end
+	end
+	return true
+end
+
+-- Defense against one foe in doubles with both foes alive: type matchups only (0x09083ABC), no damage.
+-- Any super-effective move -1; no neutral move (all resisted/immune) +17; else walls +2.
+local function score_vs_foe_types(mem, cand, foe, s)
+	local se, neutral, phys, spec = nil, 0, false, false
+	for i = 0, 3 do
+		local id = foe.moves[i]
+		if id ~= 0 then
+			local mv = M.move(mem, id, foe)
+			if mv.split ~= 2 and mv.power > 0 then
+				if mv.split == 0 then phys = true else spec = true end
+				local eff = M.effectiveness(mem, mv.type, cand)
+				if eff > 1 then se = se or mv.name elseif eff == 1 then neutral = neutral + 1 end
+			end
 		end
 	end
-	return score, flags
+	if se then
+		bump(s, -1, nil, "super-effective " .. se)
+	elseif neutral == 0 then
+		bump(s, 17, 2, "resists all your moves")
+	else
+		local ok, txt = walls(cand, foe, phys, spec)
+		if ok then bump(s, 2, 8, "walls you (" .. txt .. ")") else s.why[#s.why + 1] = "neutral hits, no wall (" .. txt .. ")" end
+	end
+end
+
+-- RR's switch-in scorer 0x090D7168 for one party candidate: summed over every live foe (doubles
+-- loops over both). Returns score, flags, reasons; score -1 when the candidate has no damaging move.
+-- damage_path: singles, or doubles when your party has exactly one usable Pokemon left (0x09073B6A /
+-- 0x090C1A64 count species, not egg, HP > 0); otherwise doubles defense is type matchups only.
+local function score_candidate(mem, cand, foes, side, slot, doubles, damage_path)
+	local s = { score = 0, flags = 0, why = {} }
+	cand.battler = side
+	local cspd = M.speed(mem, cand)
+	local per_foe = {}
+	for _, foe in ipairs(foes) do
+		s.why = {}
+		local fspd = M.speed(mem, foe)
+		if cspd >= fspd then bump(s, 14, 0x40, string.format("outspeeds (%d vs %d)", cspd, fspd))
+		else s.why[#s.why + 1] = string.format("slower (%d vs %d)", cspd, fspd) end
+		if damage_path then
+			if not score_vs_foe_damage(mem, cand, foe, side, slot, foe.battler, s, doubles) then return -1, s.flags, "no damaging move" end
+		else
+			-- Offense still runs per foe (KO / 2HKO from the bench cache, which stays 0: rule 14).
+			local usable, ko, two = false, false, false
+			for i = 0, 3 do
+				local id = cand.moves[i]
+				if id ~= 0 then
+					local mv = M.move(mem, id, cand)
+					if mv.split ~= 2 and mv.power > 0 then
+						usable = true
+						local d = bench_damage(mem, side, slot, foe.battler, i) or M.damage(mem, cand, foe, mv, M.SWITCH_ROLL)
+						if d >= foe.hp then ko = true end
+						if d * 2 >= foe.hp then two = true end
+					end
+				end
+			end
+			if not usable then return -1, s.flags, "no damaging move" end
+			if ko then bump(s, 31, 1, "KOs")
+			elseif two then bump(s, 2, 0x10, "2HKOs") end
+			score_vs_foe_types(mem, cand, foe, s)
+		end
+		per_foe[#per_foe + 1] = string.format("vs %s: %s", S.species_name(mem, foe.species), table.concat(s.why, ", "))
+	end
+	return s.score, s.flags, table.concat(per_foe, " | ")
 end
 
 -- Predict which party slot replaces battler ai_b against foe battler foe_b.
@@ -730,14 +800,39 @@ function M.predict_switchin(mem, ai_b, foe_b)
 	local side = ai_b & 1
 	local party = S.read_party(mem, side == 1 and "enemy" or "player")
 	local foe = S.read_battle_mon(mem, foe_b)
-	local on_field = mem:read16(S.BATTLER_PARTY_INDEXES + ai_b * 2)
+	local doubles = mem:read32(0x02022B4C) & 1 ~= 0
+	-- Foes the scorer loops over: every live battler on the other side (one in singles).
+	local foes = { foe }
+	if doubles then
+		foes = {}
+		for b = (side ~ 1), 3, 2 do
+			local f = S.read_battle_mon(mem, b)
+			if f.hp > 0 then foes[#foes + 1] = f end
+		end
+	end
+	local damage_path = not doubles
+	if doubles then
+		local usable = 0
+		for _, pm in pairs(S.read_party(mem, side == 1 and "player" or "enemy")) do
+			if pm.hp > 0 and pm.is_egg == 0 then usable = usable + 1 end
+		end
+		damage_path = usable == 1
+	end
+	-- Excluded: the Pokemon on the field on this side (both in doubles) and slots already picked to
+	-- come in (gBattleStruct + 0x5C + battler; 6 = none).
+	local taken = {}
+	local gbs = mem:read32(0x02023FE8)
+	for _, b in ipairs(doubles and { ai_b, ai_b ~ 2 } or { ai_b }) do
+		taken[mem:read16(S.BATTLER_PARTY_INDEXES + b * 2)] = true
+		if doubles then taken[mem:read8(gbs + 0x5C + b)] = true end
+	end
 	local out = { slots = {}, odds = {} }
 	local order = {}
 	for slot = 0, 5 do
 		local pm = party[slot]
-		if pm and pm.hp > 0 and pm.is_egg == 0 and slot ~= on_field and (pm.status1 & 7 == 0 or pm.status1 == 1) then
+		if pm and pm.hp > 0 and pm.is_egg == 0 and not taken[slot] and (pm.status1 & 7 == 0 or pm.status1 == 1) then
 			local cand = M.party_battle_mon(mem, pm)
-			local sc, fl = score_candidate(mem, cand, foe, side, slot, foe_b)
+			local sc, fl, why = score_candidate(mem, cand, foes, side, slot, doubles, damage_path)
 			local maxd, per = 0, {}
 			for i = 0, 3 do
 				local id = cand.moves[i]
@@ -748,7 +843,7 @@ function M.predict_switchin(mem, ai_b, foe_b)
 					if d > maxd then maxd = d end
 				end
 			end
-			out.slots[slot] = { name = S.species_name(mem, pm.species), score = sc, flags = fl, maxd = maxd, foe_hp = foe.hp,
+			out.slots[slot] = { name = S.species_name(mem, pm.species), score = sc, flags = fl, why = why, maxd = maxd, foe_hp = foe.hp,
 				permoves = table.concat(per, "/") }
 			order[#order + 1] = slot
 		end

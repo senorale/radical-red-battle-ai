@@ -167,6 +167,31 @@ local function moves_text(mem, m)
 	return table.concat(t, ", ")
 end
 
+-- Compact lines for the Pokemon on the field: position, HP, types, stats, stages, status, moves.
+-- speed_fn (optional) gives the effective Speed the AI uses.
+function M.field_lines(mem, speed_fn)
+	local POS = { [0] = "you L", [1] = "foe L", [2] = "you R", [3] = "foe R" }
+	local lines = {}
+	for b = 0, mem:read8(M.BATTLERS_COUNT) - 1 do
+		local m = M.read_battle_mon(mem, b)
+		if m.species ~= 0 then
+			local st = {}
+			for i = 1, 7 do
+				local v = m.stages[M.STAGE_NAMES[i]] - 6
+				if v ~= 0 then st[#st + 1] = string.format("%s%+d", M.STAGE_NAMES[i], v) end
+			end
+			lines[#lines + 1] = string.format("  field %s %-10s %3d/%3d HP [%s] Atk %d Def %d SpA %d SpD %d Spe %d%s%s%s | %s",
+				POS[b] or b, M.species_name(mem, m.species), m.hp, m.max_hp, types_text(m),
+				m.attack, m.defense, m.sp_attack, m.sp_defense, m.speed,
+				speed_fn and string.format(" (eff %d)", speed_fn(m)) or "",
+				#st > 0 and (" " .. table.concat(st, " ")) or "",
+				m.status1 ~= 0 and string.format(" status 0x%X", m.status1) or "",
+				moves_text(mem, m))
+		end
+	end
+	return lines
+end
+
 -- Human-readable lines for one battle state.
 function M.format(mem, s)
 	local POS = { [0] = "your left", [1] = "foe left", [2] = "your right", [3] = "foe right" }

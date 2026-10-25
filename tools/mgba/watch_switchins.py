@@ -6,7 +6,7 @@ import json, os, sys, time
 
 args = [a for a in sys.argv[1:] if not a.startswith('--')]
 path = args[0] if args else os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs', 'decisions.jsonl')
-KEEP = ('frame ', '  reason:', '  pick:', '  tie with', '  PREDICT:', '  MODEL:', '  EXPERIMENT:', '    ')
+KEEP = ('frame ', '  field', '  reason:', '  pick:', '  tie with', '  PREDICT:', '  MODEL:', '  EXPERIMENT:', '    ')
 
 def show(line):
     try:

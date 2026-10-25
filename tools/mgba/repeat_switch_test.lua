@@ -318,6 +318,13 @@ callbacks:add("frame", function()
 		assert(emu:loadStateFile(STATE), "could not load " .. tostring(STATE))
 		if SEED_MODE == "random" then emu:write32(RANDOM2, math.random(0, 0xFFFFFFFF)) end
 		if os.getenv("RR_TEST_SEED_MAIN") == "random" then emu:write32(0x03005000, math.random(0, 0xFFFFFFFF)) end -- main Random state
+		-- RR_TEST_POKE="02024284+56:16:60,...": write hex address (optionally + hex offset), size 8/16/32,
+		-- decimal value after each load (e.g. party slot 0 HP before a battle starts).
+		for addr, off, size, value in (os.getenv("RR_TEST_POKE") or ""):gmatch("(%x+)%+?(%x*):(%d+):(%d+)") do
+			local a = tonumber(addr, 16) + (off ~= "" and tonumber(off, 16) or 0)
+			local v = tonumber(value)
+			if size == "8" then emu:write8(a, v) elseif size == "16" then emu:write16(a, v) else emu:write32(a, v) end
+		end
 		phase = "run"
 		return
 	end

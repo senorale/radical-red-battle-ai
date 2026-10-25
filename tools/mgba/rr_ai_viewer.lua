@@ -139,7 +139,24 @@ local function log_decision(battler, runs, choice, pred)
 		for _, r in ipairs(runs) do
 			local sc = {}
 			for i = 0, 3 do sc[#sc + 1] = tostring(r.scores[i]) end
-			ts[#ts + 1] = string.format('{"battler":%d,"name":"%s","scores":[%s]}', r.target, json_escape(species_name(r.target)), table.concat(sc, ","))
+			-- Per target: its HP, RR's damage AI -> target per AI move and target -> AI per target move
+			-- (null = not computed), and RR's CanKnockOut / Can2HKO both ways (null = not computed).
+			local ko = ""
+			if model_ok then
+				local function flag(v) return v == nil and "null" or tostring(v) end
+				local function dmg(a, d)
+					local t = {}
+					for k = 0, 3 do t[#t + 1] = tostring(Model.cached_damage(emu, a, d, k) or "null") end
+					return table.concat(t, ",")
+				end
+				local tb = r.target
+				ko = string.format(',"hp":[%d,%d],"dmg":[%s],"dmg_back":[%s],"ai_ko":%s,"ai_2hko":%s,"you_ko":%s,"you_2hko":%s',
+					emu:read16(BATTLE_MONS + tb * MON_SIZE + 0x28), emu:read16(BATTLE_MONS + tb * MON_SIZE + 0x2C),
+					dmg(battler, tb), dmg(tb, battler),
+					flag(Model.cached_ko(emu, battler, tb, 1)), flag(Model.cached_ko(emu, battler, tb, 2)),
+					flag(Model.cached_ko(emu, tb, battler, 1)), flag(Model.cached_ko(emu, tb, battler, 2)))
+			end
+			ts[#ts + 1] = string.format('{"battler":%d,"name":"%s","scores":[%s]%s}', r.target, json_escape(species_name(r.target)), table.concat(sc, ","), ko)
 		end
 		parts[#parts + 1] = string.format('"doubles":true,"chosen_target":%d,"targets":[%s]', emu:read8(AI_TARGET), table.concat(ts, ","))
 	end
@@ -319,6 +336,13 @@ local function report_switch(battler, slot, kind, extra)
 	local _, to_name = party_species(side, slot)
 	local lines = { string.format("frame %d  %s (%s) %s -> slot %d %s", emu:currentFrame(), species_name(battler),
 		POSITION[battler] or battler, kind, slot, to_name) }
+	-- Battle status at this moment (who is on the field, HP, stats, moves), for analysis.
+	if model_ok then
+		local ok, fl = pcall(function()
+			return require("rr_state").field_lines(emu, function(m) return Model.speed(emu, m) end)
+		end)
+		if ok then for _, l in ipairs(fl) do lines[#lines + 1] = l end end
+	end
 	for _, l in ipairs(extra) do lines[#lines + 1] = l end
 	if reset_bench_enabled() then
 		lines[#lines + 1] = "  EXPERIMENT: bench damage cache was reset to 0xFFFFFFFF before each scorer run (logs/reset_bench_cache)"
@@ -400,7 +424,7 @@ end
 
 local turn_switch_pred = {} -- per AI battler: switch-in prediction from the start of its turn
 local function predict_switchin(b)
-	if not model_ok or (emu:read32(0x02022B4C) & 1) ~= 0 or b & 1 ~= 1 then return nil end
+	if not model_ok or b & 1 ~= 1 then return nil end
 	local ok, p = xpcall(Model.predict_switchin, debug.traceback, emu, b, b ~ 1)
 	if not ok then log("switch-in predict error: " .. tostring(p)) end
 	return ok and p or { error = tostring(p) }
@@ -460,6 +484,10 @@ local function on_ko_switch()
 			if r then t[#t + 1] = string.format("%d %s %d (%d%%)", sl, r.name, r.score, math.floor((pred.odds[sl] or 0) * 100 + 0.5)) end
 		end
 		extra[#extra + 1] = "  PREDICT: " .. table.concat(t, ", ")
+		for sl = 0, 5 do
+			local r = pred.slots[sl]
+			if r and r.why then extra[#extra + 1] = string.format("    why %d %s %d: %s", sl, r.name, r.score, r.why) end
+		end
 	elseif fainted and pred and pred.error then
 		extra[#extra + 1] = "  PREDICT error: " .. pred.error
 	end
