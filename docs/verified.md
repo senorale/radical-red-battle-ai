@@ -170,6 +170,86 @@ What still counts: outspeeds +14, resists all your moves +17, walls your attack 
 - **Code:** the scorer `0x090D7168` adds +31 when the bench Pokemon can KO (`0x090DAA78` -> `0x090DA9D0`) and +2 when its stored best damage (`gNewBS+0x6F0`) is at least half your HP. Both take their damage from `0x090DA8A4`, which only calculates when its cache slot holds `0xFFFFFFFF` and otherwise returns the stored value. The cache is u32 per move at `gNewBS + 0x3F0 + (((side*6 + slot)*4 + foe)*4 + move)*4`. No code found writes `0xFFFFFFFF` to that range; `ClearCachedAIData` `0x090C8BA4` resets the other AI caches (`+0x2F0`, `+0x22E`, `+0x810`, `+0x820`, ...) but not this one. Where the zeros come from (likely the zeroed allocation of `gNewBS` at battle start) is not confirmed. [ROM]
 - **Evidence (2026-10-24):** the viewer prints the raw cache for every party slot at each switch-in. In four untouched battles every value was 0, including Togedemaru, whose Zippy Zap did 61 to Azumarill on its first turn out, and no bench Pokemon in about 400 logged slot rows ever had the KO (0x01) or 2HKO (0x10) flag. Then the same Politoed battle was replayed with the viewer's experiment switch (`tools/mgba/logs/reset_bench_cache`) setting the cache to `0xFFFFFFFF` before each scorer run: RR filled it with real damage (e.g. Toxicroak 97 against 97 HP), the KO and 2HKO flags and points appeared (Toxicroak 31 -> 62), and the choice changed at the same moment (Toxicroak switched to Starmie, 44 with "KO foe", instead of Mantine, 31). Faint replacements in that run also got KO credit (Ludicolo 30, Toxicroak 52 with revenge kill). Doubles switch-ins not checked.
 
+## 15. Last Resort gets -10 until it can be used (singles) [VERIFIED]
+
+- **Code:** Negatives `0x090CF83E`: -10 unless `0x0906CAD4` passes: every other move it knows was used since it came in (one bit per move slot at `gNewBS+0x6D+battler`), and it knows at least one other move (Last Resort alone always fails). [ROM]
+- **Evidence:** Komala (Sleep Talk, Last Resort) scored Last Resort 99/98/92 on its first turn out (its normal score minus 10) and used Sleep Talk; from the next turn Last Resort scored normally (102, 108, 109). Seen in three playthroughs; Eevee showed the same -10 earlier.
+
+## 16. U-turn, Volt Switch and Flip Turn: the pivot check (singles) [VERIFIED]
+
+- **Code:** Positives `0x090D2F60` calls ShouldPivot `0x090C5704`. Result 0 (do not pivot): -9, and if the move was the strongest, the strongest-move bonus is recalculated without it (`0x090DE4EC`). Result 2 (pivot): a bonus by role from jump table `0x090C69BE`: +3 pure attacker or hazard setter, +9 setup sweepers, stall and Baton Pass, +7 cleric and screens, +4 phazer. Result 3 (pivot now, set by the switch logic at `gNewBS+0x1C5`): +9. Result 1 (can pivot): no change; this is what it returns when it has no Pokemon to switch to. ShouldPivot reads RR's KO caches (`gNewBS+0x820` CanKnockOut, `+0x830` Can2HKO) and the best switch-in's flags. [ROM]
+- **Evidence:** Togedemaru (pure attacker): U-turn 91 (-9) on healthy turns, 103 (+3) at 24% HP against Clodsire (it then pivoted to Komala), 100 or 102 once it was the last Pokemon. The model with this check matched the U-turn score on all 4 replay turns where it ran (91, 91, 91, 100).
+
+## Doubles: move selection
+
+How each enemy picks a move and a target in a double battle. Evidence is the viewer's per-target logs (`tools/mgba/logs/`, 2026-10-24 and 2026-10-25) and repeat tests on copies of the user's savestate with a fresh `Random2` seed per run.
+
+### D1. Every move is scored against every other battler, then the best target wins [VERIFIED]
+
+The AI runs its scripts once per battler: both foes and its own partner (`0x090C82C0`, doubles branch). Moves aimed at the partner are scored too (Sleep Powder on the partner scored 60). Partner targets below 101 are dropped. The two enemies decide in Speed order, faster first, so the slower one can react to the faster one's chosen move and target. **Evidence:** Boltund (Speed 110) decided before Ambipom (105), Ambipom before Mr. Mime (93) and Granbull (47).
+
+### D2. Damaging moves score by "doubles damage points" and the role table [VERIFIED]
+
+For each target, `0x090E03C4` scores every damaging move: +4 if it hits a foe, +2 more if it KOs, +1 if it is the strongest move against that foe; with two foes alive, -3 if it does under 1/4 of the foe's max HP, -2 if under 1/3. A spread move adds its points for each foe it hits (and loses 3 for hitting the partner). Only the single best move per target keeps its points (cached at `gNewBS+0x7B0`, points at `+0x7D0`). The total is turned into a score bonus by the role table `0x093504B0` (`0x090C6E5C`):
+
+| Points | All-Out Attacker | Setup Attacker |
+|---|---|---|
+| 1-4 | +9 | +4 |
+| 5 (hit + strongest) | +10 | +9 |
+| 6-7 (hit + KO) | +11 | +11 |
+| 10 (spread, strongest on both) | +16 | +15 |
+
+- **Evidence:** +10 for the strongest move per target (Amaura, Jigglypuff, Plusle, Electrike, Snover, Boltund...), +11 for a KO (Boltund's Thunder Fang into Gyarados), +16 for spread moves strongest on both foes (Electroweb, Bulldoze), and Butterfree's +9/+11. Butterfree has exactly 3 attacking moves, which makes it a Setup Attacker under RR's "exactly 3" rule (`0x090C4574`).
+- **Utility role:** Perrserker's Iron Head scored only +1 (Utility row: 5 points = +1). Its role assignment in `0x090C40C4` is not checked yet.
+
+### D3. A foe the partner already KOs is worth nothing [VERIFIED]
+
+If the partner's chosen move KOs a foe, that foe counts as "handled" and the second enemy gets no damage points against it (`0x090E03C4`). **Evidence:** Mightyena set to 30 HP, where Ambipom's Fake Out alone KOs it: Mr. Mime's Freeze-Dry into Mightyena dropped to 100 and Mr. Mime picked Psyshock into Emboar in 20 of 20 runs.
+
+### D4. Moves with no effect get -30 [OBSERVED]
+
+Psyshock into Mightyena (Dark), Thunder Fang and Shock Wave into Clodsire (Ground) all scored 70. Thunder Fang into Lanturn (Volt Absorb) scored 60. Singles gives -15 (rule 9). CFRU doubles every "avoid" penalty in double battles, which would explain -30 (and -40 for an absorbing ability, CFRU's -20 doubled), but the spot in RR's code is not found yet.
+
+### D5. Fake Out goes to the bigger threat on the first turn [VERIFIED]
+
+`0x090C67A4`: on the user's first turn, if the target can flinch, Fake Out gets +15 (All-Out or Setup Attacker), +17 (Trick Room or team support roles) or +19 (Utility, Phazing). It gets -1 against a foe whose partner can KO more of the AI's Pokemon (counted with RR's CanKnockOut `0x090DFED4`), so it goes to the foe that threatens the AI's team more. Two enemies never Fake Out the same foe. After the first turn Fake Out scores 80 (-20).
+
+- **Evidence:** Ambipom: Fake Out into Mightyena 115, into Emboar 114 (Mightyena can KO Mr. Mime, Emboar can KO neither), so Fake Out into Mightyena in 100 of 100 runs. Perrserker's Fake Out scored 119 (Utility). Fake Out scored 80 on every later turn.
+
+### D6. Equal top scores on two targets: the tie-break [VERIFIED]
+
+When two targets tie for the best score, `0x090C82C0` decides in this order (for enemies with a doubles attacker role, `0x090C470C`/`0x090C4744`/`0x090C478C`):
+
+1. **More KOs wins** (`0x090C7330`). This counts a KO together with the partner's hit when the partner already chose its move, targets the same foe (or uses a spread move) and goes first.
+2. **If both hits do at least 50% of the target's max HP:** prefer the foe that can KO the attacker.
+3. **Otherwise a 25% roll** (`Random2 & 3 == 0`): if it hits, the target taking the higher % of its max HP wins (`0x090C7298`); if it misses, a random pick among the tied targets.
+
+So without a KO difference the harder-hit target is picked about 62.5% of the time (25% + 75% x 1/2).
+
+- **Evidence:** Mr. Mime, Freeze-Dry into Mightyena (39%) vs Psyshock into Emboar (69%), both 110: Emboar 34 of 50. With a Payapa Berry on Emboar (33%): Emboar 20 of 50. A trace of the roll (`0x090C84B8`) and the damage % (`0x090C8598`/`0x090C8686`) over the same 50 seeds showed the roll hit in 14 runs, each one picking the higher %, and the berry flipped exactly those 14. With Mightyena at 60 HP (Fake Out + Freeze-Dry KO): Mightyena in 20 of 20 runs. `Random2` is a fixed formula, so from one savestate with the same inputs the pick never changes.
+
+## Doubles: post-KO switch-in
+
+How the AI picks a replacement after a faint in a double battle. Same scorer as singles (`0x090D7168`), run against each live foe and summed. The doubles switch-in model in `tools/mgba/rr_model.lua` follows these rules and matched RR's score for every party slot in every logged doubles switch-in (19 switch-ins on 2026-10-25).
+
+### S1. Each foe is scored separately and the results add up [VERIFIED]
+
+Per live foe:
+
+- **Speed:** +14 if the candidate is at least as fast (ties count) as that foe, using the Speed the AI uses (stages, paralysis, weather abilities). Being faster than both foes is worth +28.
+- **Offense:** +31 if it can KO that foe, +2 if it can 2HKO it. Always 0 in practice, because the bench damage cache stays 0 (rule 14; every doubles switch-in showed `0/0/0/0` against both foes).
+- **Defense with both foes alive:** type matchups only, no damage calculation (`0x09083ABC`). Any super-effective damaging move from that foe: -1 (the score never goes below 0). Otherwise, if none of its damaging moves hits neutrally (all resisted or immune): +17 "resists all". Otherwise +2 "walls" when the candidate's Defense beats the foe's boosted Attack (if the foe has a physical move) and its Sp. Def beats the foe's boosted Sp. Atk (if it has a special move).
+
+- **Evidence:** Boltund 30 = +14 +14 (faster than Emboar and Azumarill) +2 (walls Azumarill); Boltund 27 = +14 +14 -1 (Gyarados' Bulldoze); Perrserker 16 = +14 (Speed tie 52 vs 52 with Azumarill) +2 (walls Azumarill) -1 (Emboar's Heat Crash) +0; Granbull 0 (slower than both, hit super-effectively).
+
+### S2. Which Pokemon can be picked [VERIFIED]
+
+Not the two Pokemon on the field, not a slot the partner already picked this turn (`gBattleStruct+0x5C+battler`), not fainted. Equal scores: the scorer walks the party in order and a later slot takes over on a 50% `Random2` flip (rule 5), so when everyone scores 0 the pick is a coin flip between the healthy ones.
+
+### S3. Your last Pokemon: damage-based, and "you KO it" is only -1 [ROM]
+
+The type-only defense in S1 applies while your party has more than one usable Pokemon. When you are down to exactly one (`0x09073B6A` counts party slots with a species, not an egg, HP above 0), the defense part uses damage like singles, but a candidate you can KO only loses 1 point (the doubles branch at `0x090D7A3C` skips the singles -39/-15 and the "faints" flag). Not seen in a logged battle yet. With one of your Pokemon on the field but more in your party, the scorer still uses type matchups, against that one foe.
+
 ## Worked example: Hippopotas against your Psyduck
 
 How rules 2 to 9 combine in one real position (test state `rr.ss6`, start of the battle). Every number below was traced in the game with `RR_TEST_TRACE`: the AI's score helpers (`0x090E1380` adds, `0x090E1394` subtracts), who called them, and the branch that led there. Your Psyduck (Water Pulse, Confusion, Tail Whip, Water Gun) faces the enemy's Hippopotas (Bulldoze, Rock Tomb, Toxic, Slack Off). The enemy's bench: Cacnea, Lunatone, Lileep, Archen, Varoom.
