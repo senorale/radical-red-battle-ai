@@ -77,7 +77,7 @@ local function signed8(v) return v >= 128 and v - 256 or v end
 local buffer = console:createBuffer("RR AI scores")
 local pending = {}   -- per AI battler: list of {target, moves, scores}
 local history = {}   -- printed decisions, newest last
-local MAX_HISTORY = 6
+local MAX_HISTORY = 12
 
 local function snapshot()
 	local ai = emu:read32(emu:read32(GBATTLE_RESOURCES) + 0x14)
@@ -263,7 +263,7 @@ local SWITCH_CHECKS = {
 	{ 0x090D8F24, "Yawn: about to fall asleep" },
 	{ 0x090D90AC, "asleep" },
 	{ 0x090D9146, "taking annoying secondary damage (Leech Seed, Curse, toxic, ...)" },
-	{ 0x090D9158, "avoid death: foe outspeeds and KOs, a party member survives" },
+	{ 0x090D9158, "just-switched-in gate / avoid death: (singles) foe outspeeds and KOs, a party member survives" },
 	{ 0x090D9182, "offensive stats too low" },
 	{ 0x090D98B2, "save sweeper for later" },
 }
@@ -396,14 +396,54 @@ local function emit(lines, rows)
 	redraw()
 end
 
-local function on_should_switch() check_now = "pre-checks" end
-for _, c in ipairs(SWITCH_CHECKS) do c[3] = function() check_now = c[2] end end
+-- Every ShouldSwitch run (each enemy, every turn): which checks it went through and the result.
+-- The RR-only 25% skip (Random2() % 4 == 0, 0x090D82CE) is the first Random2 call in ShouldSwitch,
+-- so it is predicted from the Random2 state at entry.
+local switch_run = nil
+local function on_should_switch()
+	check_now = "pre-checks"
+	local st = emu:read32(0x020386D0)
+	local nxt = (st * 0x41C64E6D + 0x3039) & 0xFFFFFFFF
+	switch_run = { battler = emu:read8(ACTIVE_BATTLER), skip = ((nxt >> 16) % 4) == 0, checks = {} }
+end
+for _, c in ipairs(SWITCH_CHECKS) do c[3] = function()
+	check_now = c[2]
+	if switch_run then switch_run.checks[#switch_run.checks + 1] = c[2]:match("^[^:]+") end
+end end
 local function on_should_switch_ret()
-	if emu:readRegister("r4") ~= 0 then
+	local result = emu:readRegister("r4") ~= 0
+	if result then
 		switch_reason[emu:read8(ACTIVE_BATTLER)] = check_now
 		log("ShouldSwitch TRUE: " .. tostring(check_now))
 	end
+	local r = switch_run
+	switch_run = nil
 	check_now = nil
+	if not r then return end
+	local why
+	if result then why = "switch: " .. (r.checks[#r.checks] or "?")
+	elseif #r.checks > 0 then why = "stay: no check passed"
+	elseif r.skip then why = "stay: 25% skip roll (no checks run)"
+	else why = "stay: stopped before the checks (trapped, no usable bench Pokemon, or a battle flag)" end
+	local line = string.format("frame %d  %s (%s) SWITCH CHECK -> %s%s", emu:currentFrame(), species_name(r.battler),
+		POSITION[r.battler] or r.battler, result and "SWITCH" or "STAY", "")
+	local detail = string.format("  %s | checks run: %s", why, #r.checks > 0 and table.concat(r.checks, " > ") or "none")
+	table.insert(history, line .. "\n" .. detail)
+	while #history > MAX_HISTORY do table.remove(history, 1) end
+	redraw()
+	if LOG_DIR then
+		pcall(function()
+			local f = io.open(LOG_DIR .. "decisions.jsonl", "a")
+			if f then
+				local cs = {}
+				for i, c in ipairs(r.checks) do cs[i] = '"' .. json_escape(c) .. '"' end
+				f:write(string.format('{"frame":%d,"switch_check":{"battler":%d,"ai":"%s","result":"%s","why":"%s","skip_roll":%s,"checks":[%s]}}\n',
+					emu:currentFrame(), r.battler, json_escape(species_name(r.battler)), result and "SWITCH" or "STAY",
+					json_escape(why), tostring(r.skip), table.concat(cs, ",")))
+				f:close()
+			end
+		end)
+	end
 end
 local function on_preset() preset[emu:read8(ACTIVE_BATTLER)] = emu:readRegister("r3") & 0xFF end
 

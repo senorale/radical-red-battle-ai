@@ -1,4 +1,5 @@
-# Follow the viewer's decisions.jsonl and print only the enemy switch-ins: who came in and why,
+# Follow the viewer's decisions.jsonl and print the enemy's switch checks (every turn, both Pokemon:
+# STAY or SWITCH and which checks ran) and its switch-ins: who came in and why,
 # every party slot's switch-in score and flags, and RR's bench damage cache (gNewBS + 0x3F0).
 # Usage: python3 -I watch_switchins.py [decisions.jsonl] [--all]
 #   --all  also print the switch-ins already in the file (default: only new ones)
@@ -12,6 +13,11 @@ def show(line):
     try:
         entry = json.loads(line)
     except ValueError:
+        return
+    sc = entry.get('switch_check')
+    if sc:
+        print('frame %d  %s switch check -> %s | %s | checks: %s' % (entry['frame'], sc['ai'], sc['result'], sc['why'],
+              ' > '.join(sc['checks']) or 'none'), flush=True)
         return
     if 'switch' not in entry:
         return
