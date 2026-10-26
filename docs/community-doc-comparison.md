@@ -85,7 +85,7 @@ All of these were found in the ROM code (see `docs/ai-guide.md`, `docs/singles/m
 - **Difficulty modes use the same AI.** Normal, Restricted, Hardcore and Easy share the same decision logic; the only difference is Hardcore's anti-switch rule.
 - **Trainers never use items.**
 - **On 25% of turns the AI skips all switch logic.**
-- **Damage assumptions:** 93% roll (9th of 16) for the active Pokemon. The 96% roll for benched Pokemon in the code never matters for their own damage (it is never calculated, rule 14).
+- **Damage assumptions:** for the active Pokemon, the max roll with the final damage cut to 93% (`floor(max roll x 93 / 100)`), which is often not the 9th of the 16 rolls (`../README.md`, "How the AI estimates damage"). The 96% roll for benched Pokemon in the code never matters for their own damage (it is never calculated, rule 14).
 - **Move-scoring changes from CFRU:**
   - Taunt +8 when your mon has any status move.
   - Second Protect in a row has no penalty.

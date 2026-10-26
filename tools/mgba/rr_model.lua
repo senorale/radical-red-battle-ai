@@ -30,7 +30,10 @@ local M = {}
 
 M.MOVES, M.MOVE_SIZE = 0x091521D0, 12
 M.TYPE_CHART = 0x09146CE2
-M.KO_ROLL = 93 -- percent; the AI's assumed damage roll for KO checks (from docs/ai-guide.md, not yet verified)
+-- Percent applied to the final max-roll damage for the AI's KO checks: floor(max roll x 93 / 100)
+-- (0x09087080, x 0x5D / 100). Not the 9th of the 16 rolls; matched RR's damage cache in 6 of 6
+-- moves (rr.ss6, 2026-10-25). See README.md "How the AI estimates damage".
+M.KO_ROLL = 93
 
 local function s8(v) return v >= 128 and v - 256 or v end
 

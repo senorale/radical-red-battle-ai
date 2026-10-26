@@ -37,10 +37,35 @@ A few highlights:
 
 - Every trainer uses the full smart AI. There are no "dumb" route trainers.
 - Trainers never use items, and on 25% of turns the AI does not consider switching at all.
-- The AI assumes the 9th of the 16 damage rolls (93%) when judging KOs.
+- When judging KOs, the AI takes the highest damage roll and cuts the final damage to 93%. This is often not the 9th of the 16 rolls, and sometimes not any of the 16 rolls (see "How the AI estimates damage" below).
 - **Switch-ins do not count their own damage** (the bench damage cache bug, [`docs/findings.md`](docs/findings.md) rule 14, [OBSERVED] in every switch-in logged so far): the AI picks replacements on Speed and on how well they take your hits, not on how hard they hit you. In doubles, being faster than both of your Pokemon is worth the most.
 - In doubles, ties between targets are broken by KOs (counting the partner's hit), then a 25% roll for the harder-hit target, else a coin flip ([TESTED]).
 - Difficulty modes share the same AI. The only difference is Hardcore's anti-switch rule.
+
+## How the AI estimates damage
+
+Every "can I KO you?" check uses one damage number per move. RR computes it in `0x09087080` [TESTED]:
+
+```
+AI damage = floor(max roll x 93 / 100)
+```
+
+The max roll is the normal damage formula with the random factor at 100%, after STAB, type effectiveness, items and abilities. The 93% is applied once, to the final number. (RR then caps it at your current HP. A crit stage of 2 adds a 50% chance of x1.5, and stage 3 or more always does.)
+
+It is easy to read this as "the AI uses the 9th of the 16 rolls", since the 9th roll's random factor is also 93% (the factors run 85, 86, ... 100). It is not the same number. The game applies the random factor in the middle of the formula, before STAB and type effectiveness, and rounds down at each step. The AI's 93% comes after all of that.
+
+**Example** (Dynamic-Calc engine, Gen 8 mechanics, level 20): Garchomp's Earthquake into Heatran, STAB and x4.
+
+| | Step by step | Result |
+|---|---|---|
+| 9th roll | base 32, x93% = 29.76 rounds to 29, STAB x1.5 = 43.5 rounds to 43, x4 | **172** |
+| AI damage | base 32, x100%, STAB x1.5 = 48, x4 = 192 (the max roll), then x93/100 = 178.56 | **178** |
+
+The 16 possible rolls are `160, 160, 160, 168, 168, 168, 172, 172, 172, 180, 180, 180, 184, 184, 184, 192`. They jump in steps of 4 because x4 is applied after the random factor. The AI's 178 falls between two rolls: it is not any damage the move can actually do. Against a target with 175 HP, the AI believes it KOs (178), the 9th roll says it does not (172), and in the real game it KOs on 7 of the 16 rolls.
+
+**How big the gap gets** (same calc, 24 matchups from level 20 to 100, physical and special, neutral to x4): AI damage minus the 9th roll ranged from -2 to +6 HP. It matched exactly in 7 of 24, and was one of the 16 possible rolls in only 8 of 24. The gap grows with the multipliers applied after the random factor (STAB, super-effective), not with level: neutral non-STAB hits matched every time, the x4 hit had the largest gap. Near a KO threshold this decides whether the AI thinks it kills, and with it the +9 "KO and goes first" bonus (`docs/findings.md` rule 7).
+
+**Evidence:** the formula is read in the decompile of `0x09087080` (the damage call `0x09085A10` has no random roll; then `x 0x5D / 100`). On one battle (`rr.ss6`, sandstorm), RR's cached AI damage matched `floor(max roll x 93 / 100)` from Dynamic-Calc in 6 of 6 moves, while the 9th roll matched 4 of 6 (Body Slam: 9th roll 6, RR 5; Sucker Punch: 9th roll 21, RR 22). Crit stages and multi-hit moves are not tested yet.
 
 ## How this was compiled
 

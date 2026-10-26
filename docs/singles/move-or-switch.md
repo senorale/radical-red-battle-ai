@@ -102,7 +102,7 @@ Only in Hardcore Mode, and never in puzzle/trial battles. After you switch, each
 
 ## 7. Practical takeaways
 
-- **It always takes a guaranteed KO.** If you are within KO range of a faster move, expect it. Since it assumes the 9th damage roll, sitting just above that threshold can bait a non-KO move.
+- **It always takes a guaranteed KO.** If you are within KO range of a faster move, expect it. It judges KOs by `floor(max roll x 93 / 100)`, not by the 9th roll (`../../README.md`, "How the AI estimates damage"), so sitting just above that number can bait a non-KO move.
 - **Bait with predictions.** It predicts your strongest move. Switching into an absorber or immunity on its predicted target works because it often keeps clicking the same strongest move.
 - **It cannot switch every turn.** 25% of turns it will not even consider switching, and it never uses items.
 - **Status users get Taunted.** Any status move on your active Pokemon gives Taunt +8.
