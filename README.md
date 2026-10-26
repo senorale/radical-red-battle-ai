@@ -83,6 +83,16 @@ In single battles the viewer also shows a PREDICT block from `tools/mgba/rr_mode
 
 To replay one position many times and see how often each decision happens (the AI's randomness is seeded per run), make an mGBA savestate just before a trainer battle and run `tools/mgba/run_repeat_test.sh <state file> 50 random`. Options and the trace mode are in [`tools/README.md`](tools/README.md).
 
+## Export your team to the damage calc
+
+`tools/mgba/rr_showdown_export.lua` exports your party and all 25 PC boxes as Showdown text (species, item, ability, level, nature, EVs, IVs, moves) that imports into [hzla's Dynamic-Calc-Decomps calc](https://hzla.github.io/Dynamic-Calc-Decomps/?data=e91164d90d06a009e6cc&dmgGen=8&gen=8&types=6&noSwitch=1&view=calculator) (Radical Red data sets). It works from any point in the game, including savestates and mid-battle, and also lists each Pokemon's Hidden Power type.
+
+1. Open your ROM in mGBA (tested on the 0.11 development build; the exporter uses no breakpoints, so stable 0.10 may work but is untested), then Tools > Scripting > File > Load script > `tools/mgba/rr_showdown_export.lua`. It can run next to the AI viewer.
+2. The export is written to `tools/mgba/logs/showdown.txt` and shown in the "Showdown Export" tab. Type `export()` in the scripting console to refresh it after changes in game.
+3. Copy the text from `showdown.txt` (copying from the mGBA tab adds a blank line between lines, which breaks the import) and paste it into the calc's import box.
+
+Abilities follow Radical Red's own rules, including the randomized-abilities option and the ability changes for your own Pokemon in the modes that use them. Names are spelled as the calc spells them (`tools/mgba/rr_calc_names.lua`, generated from the calc's tables by `gen_calc_names.js`).
+
 ## Reproduce it
 
 The scripts are in [`tools/`](tools/README.md). You need your own copies of both ROMs in `roms/` (not included), a clone of CFRU in `vendor/cfru`, and Ghidra with Java 21 (`brew install openjdk@21 ghidra`). See [`tools/README.md`](tools/README.md) for setup and usage.
